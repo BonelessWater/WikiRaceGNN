@@ -1,6 +1,6 @@
-### WikiRaceGNN
+# WikiRaceGNN
 
-# Set up
+### Set up
 
 Download docker and run:
     docker-compose up -d
