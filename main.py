@@ -16,7 +16,7 @@ class WikiGraphCrawler:
                  neo4j_username="neo4j", 
                  neo4j_password="rootroot", 
                  seed_page="Nuisance", 
-                 max_nodes=100000, 
+                 max_nodes=10000, 
                  batch_size=100):
         # Prevent reinitialization in subsequent calls
         if hasattr(self, "_initialized") and self._initialized:
