@@ -1,7 +1,7 @@
 import requests
+from collections import deque
 import random
 from neo4j import GraphDatabase
-from collections import deque
 
 class WikiGraphCrawler:
     _instance = None
@@ -16,8 +16,8 @@ class WikiGraphCrawler:
                  neo4j_username="neo4j", 
                  neo4j_password="rootroot", 
                  seed_page="Nuisance", 
-                 max_nodes=10000, 
-                 batch_size=100):
+                 max_nodes=100, 
+                 batch_size=10):
         # Prevent reinitialization in subsequent calls
         if hasattr(self, "_initialized") and self._initialized:
             return
