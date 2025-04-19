@@ -1,0 +1,26 @@
+[project]
+name = "wikiracegnn"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "BonelessWater",email = "domdd305@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "neo4j (>=5.28.1,<6.0.0)",
+    "pandas (>=2.2.3,<3.0.0)",
+    "numpy (>=2.2.4,<3.0.0)",
+    "sentence-transformers (>=4.1.0,<5.0.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "torch-geometric (>=2.6.1,<3.0.0)",
+    "matplotlib (>=3.10.1,<4.0.0)",
+    "networkx (>=3.4.2,<4.0.0)",
+    "torch (>=2.6.0,<3.0.0)",
+    "scipy (>=1.15.2,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

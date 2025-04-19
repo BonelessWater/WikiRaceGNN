@@ -1,4 +1,0 @@
-neo4j
-sentence_transformers
-requests
-torch_geometric
