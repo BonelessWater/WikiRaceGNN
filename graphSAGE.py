@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import random
+from sklearn.preprocessing import StandardScaler
 
 from utils import (neighbor_sampler, 
                    load_graph_data, 
@@ -64,7 +65,7 @@ class WikiGraphSAGE(nn.Module):
         for conv in self.convs:
             x = conv(x, edge_index)
             x = F.relu(x)
-            x = F.dropout(x, p=0.2, training=self.training)
+            x = F.dropout(x, p=0.1, training=self.training)
         
         # Attention readout
         x = self.attention(x, batch)
@@ -284,16 +285,16 @@ def train_wiki_gnn(data, model, device, num_epochs=100, batch_size=32):
     predicts the features of neighboring nodes.
     """
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
                                                 step_size=5,
                                                 gamma=0.5)
     
     # Create random train/val split
     num_nodes = data.x.size(0)
-    indices = np.random.permutation(num_nodes)
-    train_idx = indices[:int(0.8 * num_nodes)]
-    val_idx = indices[int(0.8 * num_nodes):]
+    train_idx = np.arange(num_nodes)
+    val_idx = train_idx.copy()
+    np.random.shuffle(train_idx)
     
     train_mask = torch.zeros(num_nodes, dtype=torch.bool)
     val_mask = torch.zeros(num_nodes, dtype=torch.bool)
@@ -318,7 +319,7 @@ def train_wiki_gnn(data, model, device, num_epochs=100, batch_size=32):
             sampled_nodes = neighbor_sampler(
                 torch.tensor(batch_idx, dtype=torch.long),
                 data.edge_index,
-                num_hops=2,
+                num_hops=4,
                 num_neighbors=10
             )
             
@@ -532,13 +533,22 @@ def main():
     max_nodes = 100  # Set to None to use the full dataset
     data = load_graph_data(edge_file, feature_dim=64, max_nodes=max_nodes, ensure_connected=True)
     print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges (bidirectional)")
-    
+
+    scaler = StandardScaler()
+    # .numpy() → scale → back to torch.Tensor
+    data.x = torch.from_numpy(
+        scaler.fit_transform(data.x.numpy())
+    ).float()
+
+    print("Feature means:", data.x.mean(dim=0)[:5], "…")
+    print("Feature stds:", data.x.std(dim=0)[:5], "…")
+
     # Visualize a sample of the graph
     plot_graph_sample(data)
     
     # Initialize model
     input_dim = data.x.size(1)  # Feature dimension
-    hidden_dim = 128
+    hidden_dim = 256
     output_dim = 64
     model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=2)
     
