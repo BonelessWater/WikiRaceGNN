@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import random
+import time
 from tqdm import tqdm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.preprocessing import StandardScaler
@@ -18,10 +19,12 @@ from utils import (
 )
 from traversal.utils import bidirectional_bfs
 
-def train_supervised(data, model, device, num_epochs=20, batch_size=16, num_pairs=500, 
-                     learning_rate=0.001, weight_decay=0.0001, validation_split=0.1):
+def train_path_predictor(data, model, device, num_epochs=50, batch_size=32, 
+                         num_train_pairs=1000, learning_rate=0.001, 
+                         weight_decay=0.0001, validation_split=0.2):
     """
-    Train the GNN model in a supervised manner using paths as supervision.
+    Train the GNN model with a focus on path prediction and navigation.
+    Includes more diverse training pairs and better loss functions.
     
     Args:
         data: Graph data object
@@ -29,7 +32,7 @@ def train_supervised(data, model, device, num_epochs=20, batch_size=16, num_pair
         device: Computation device
         num_epochs: Number of training epochs
         batch_size: Batch size for training
-        num_pairs: Number of node pairs to generate for training
+        num_train_pairs: Number of node pairs to generate for training
         learning_rate: Initial learning rate
         weight_decay: Weight decay for regularization
         validation_split: Fraction of data to use for validation
@@ -41,183 +44,274 @@ def train_supervised(data, model, device, num_epochs=20, batch_size=16, num_pair
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scaler = GradScaler()
     scheduler = ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,
-        patience=3,
-        verbose=True,
-        min_lr=1e-6
+        optimizer, mode='min', factor=0.5, patience=5, verbose=True, min_lr=1e-6
     )
     loss_fn = nn.CrossEntropyLoss()
     
     # Create output directory for models
     os.makedirs('models', exist_ok=True)
     
-    # Precompute global embeddings for faster training
+    # Precompute node embeddings for faster training
     print("Precomputing node embeddings...")
     with torch.no_grad():
         model.eval()
-        full_h = model(
-            data.x.to(device),
-            data.edge_index.to(device),
-            batch=torch.zeros(data.x.size(0), dtype=torch.long, device=device)
-        )
+        x_device = data.x.to(device)
+        edge_index_device = data.edge_index.to(device)
+        batch = torch.zeros(data.x.size(0), dtype=torch.long, device=device)
+        full_h = model(x_device, edge_index_device, batch)
     
-    # Build (src, tgt, true_nbr) triplets
-    print("Generating training triplets...")
-    triplets = []
-    all_idx = list(range(data.x.size(0)))
+    # Generate diverse training pairs with varying path lengths
+    print("Generating training pairs with diverse path lengths...")
+    train_pairs = []
+    all_nodes = list(range(data.x.size(0)))
     
-    with tqdm(total=num_pairs) as pbar:
-        while len(triplets) < num_pairs:
-            src = random.choice(all_idx)
-            tgt = random.choice(all_idx)
-            if src == tgt: 
+    # Try to get equal numbers of short, medium, and long paths
+    short_paths = []  # 1-2 hops
+    medium_paths = []  # 3-5 hops
+    long_paths = []   # 6+ hops
+    
+    with tqdm(total=num_train_pairs) as pbar:
+        attempts = 0
+        max_attempts = num_train_pairs * 10
+        
+        while (len(short_paths) + len(medium_paths) + len(long_paths) < num_train_pairs and 
+               attempts < max_attempts):
+            
+            src = random.choice(all_nodes)
+            tgt = random.choice(all_nodes)
+            
+            if src == tgt:
+                attempts += 1
                 continue
                 
             path, _ = bidirectional_bfs(data, src, tgt)
-            if len(path) < 2: 
+            
+            if not path:
+                attempts += 1
                 continue
                 
-            triplets.append((src, tgt, path[1]))
-            pbar.update(1)
+            path_length = len(path)
+            path_info = (src, tgt, path)
+            
+            # Categorize based on path length
+            if path_length <= 3:
+                if len(short_paths) < num_train_pairs // 3:
+                    short_paths.append(path_info)
+                    pbar.update(1)
+            elif 4 <= path_length <= 6:
+                if len(medium_paths) < num_train_pairs // 3:
+                    medium_paths.append(path_info)
+                    pbar.update(1)
+            elif path_length >= 7:
+                if len(long_paths) < num_train_pairs // 3:
+                    long_paths.append(path_info)
+                    pbar.update(1)
+                    
+            attempts += 1
+            
+            # Update progress
+            pbar.set_postfix({
+                'short': len(short_paths), 
+                'medium': len(medium_paths), 
+                'long': len(long_paths),
+                'attempts': attempts
+            })
+    
+    # Combine all path types
+    train_pairs = short_paths + medium_paths + long_paths
+    random.shuffle(train_pairs)
+    
+    print(f"Generated {len(short_paths)} short, {len(medium_paths)} medium, "
+          f"and {len(long_paths)} long paths for training")
     
     # Split into training and validation sets
-    val_size = int(len(triplets) * validation_split)
-    random.shuffle(triplets)
-    val_triplets = triplets[:val_size]
-    train_triplets = triplets[val_size:]
+    val_size = int(len(train_pairs) * validation_split)
+    val_pairs = train_pairs[:val_size]
+    train_pairs = train_pairs[val_size:]
     
-    print(f"Generated {len(train_triplets)} training and {len(val_triplets)} validation triplets")
+    print(f"Using {len(train_pairs)} pairs for training and {len(val_pairs)} pairs for validation")
     
     # Training loop
     best_val_loss = float('inf')
     best_epoch = 0
-    patience = 5
+    patience = 10
     patience_counter = 0
     
     print("Starting training...")
     for epoch in range(1, num_epochs+1):
-        random.shuffle(train_triplets)
+        random.shuffle(train_pairs)
         model.train()
         total_loss = 0
-        pbar = tqdm(range(0, len(train_triplets), batch_size),
+        correct_predictions = 0
+        total_predictions = 0
+        
+        pbar = tqdm(range(0, len(train_pairs), batch_size),
                     desc=f"Epoch {epoch}/{num_epochs}")
         
         for i in pbar:
-            batch = train_triplets[i : i+batch_size]
+            batch_pairs = train_pairs[i : i+batch_size]
             optimizer.zero_grad()
             
             batch_loss = 0
-            for src, tgt, true_nbr in batch:
-                # Sample & build subgraph (with src & true_nbr forced in)
-                sampled = neighbor_sampler(
-                    torch.tensor([src], dtype=torch.long),
-                    data.edge_index,
-                    num_hops=2, 
-                    num_neighbors=20
-                ).tolist()
-                
-                if src not in sampled: 
-                    sampled.append(src)
-                if true_nbr not in sampled: 
-                    sampled.append(true_nbr)
-                
-                # Convert to tensor
-                sampled_tensor = torch.tensor(sampled, dtype=torch.long)
-                
-                # Build subgraph
-                sub_x = data.x[sampled_tensor].to(device)
-                
-                # Create mapping from original indices to subgraph indices
-                mapping = {n: i for i, n in enumerate(sampled)}
-                
-                # Prepare edges for the subgraph
-                edge_index = data.edge_index.to(device)
-                
-                # Create masks for source and target nodes
-                sampled_tensor_device = sampled_tensor.to(device)
-                src_mask = torch.isin(edge_index[0], sampled_tensor_device)
-                dst_mask = torch.isin(edge_index[1], sampled_tensor_device)
-                
-                # Only keep edges where both source and target are in the subgraph
-                edge_mask = src_mask & dst_mask
-                sub_edge_index = edge_index[:, edge_mask]
-                
-                # Remap edge indices to subgraph indexing
-                for d in (0, 1):
-                    for j in range(sub_edge_index.size(1)):
-                        node_idx = sub_edge_index[d, j].item()
-                        if node_idx in mapping:
-                            sub_edge_index[d, j] = mapping[node_idx]
-                
-                # Compute subgraph embeddings
-                with autocast():
-                    batch_tensor = torch.zeros(sub_x.size(0), dtype=torch.long).to(device)
-                    sub_h = model(sub_x, sub_edge_index, batch_tensor)
-                    
-                    # Use the precomputed embedding for the target
-                    tgt_emb = full_h[tgt]
-                    
-                    # Score neighbors and compute loss
-                    logits = model.score_neighbors(sub_h, sampled, tgt_emb)
-                    true_pos = mapping[true_nbr]
-                    
-                    loss = loss_fn(
-                        logits.unsqueeze(0),  # [1, M]
-                        torch.tensor([true_pos], device=device)
-                    )
-                    
-                    batch_loss += loss
+            batch_correct = 0
+            batch_total = 0
             
+            for src, tgt, path in batch_pairs:
+                # For short paths, train on the direct next hop
+                if len(path) > 1:
+                    next_node = path[1]  # The next node in the path from source
+                    
+                    # Sample a neighborhood subgraph
+                    sampled = neighbor_sampler(
+                        torch.tensor([src], dtype=torch.long),
+                        data.edge_index,
+                        num_hops=1, 
+                        num_neighbors=30
+                    ).tolist()
+                    
+                    # Ensure the next node is in the subgraph
+                    if next_node not in sampled:
+                        sampled.append(next_node)
+                    
+                    # Convert to tensor and build subgraph
+                    sampled_tensor = torch.tensor(sampled, dtype=torch.long)
+                    sub_x = data.x[sampled_tensor].to(device)
+                    
+                    # Create mapping from original indices to subgraph indices
+                    mapping = {n: i for i, n in enumerate(sampled)}
+                    
+                    # Build edge index for the subgraph
+                    edge_list = []
+                    for e in range(data.edge_index.size(1)):
+                        source = data.edge_index[0, e].item()
+                        target = data.edge_index[1, e].item()
+                        if source in mapping and target in mapping:
+                            edge_list.append([mapping[source], mapping[target]])
+                    
+                    if edge_list:
+                        sub_edge_index = torch.tensor(edge_list, dtype=torch.long).t().to(device)
+                        
+                        # Compute node embeddings
+                        with autocast():
+                            batch_tensor = torch.zeros(sub_x.size(0), dtype=torch.long).to(device)
+                            sub_h = model(sub_x, sub_edge_index, batch_tensor)
+                            
+                            # Get target embedding
+                            tgt_emb = full_h[tgt].detach()
+                            
+                            # Score neighbors and compute loss
+                            logits = model.score_neighbors(sub_h, sampled, tgt_emb)
+                            true_pos = mapping[next_node]
+                            
+                            loss = loss_fn(
+                                logits.unsqueeze(0),  # [1, M]
+                                torch.tensor([true_pos], device=device)
+                            )
+                            
+                            # Calculate accuracy
+                            pred = torch.argmax(logits).item()
+                            if pred == true_pos:
+                                batch_correct += 1
+                            batch_total += 1
+                            
+                            batch_loss += loss
+            
+            # Skip empty batches
+            if batch_total == 0:
+                continue
+                
             # Normalize batch loss
-            batch_loss = batch_loss / len(batch)
+            batch_loss = batch_loss / batch_total
             
             # Backpropagate
             scaler.scale(batch_loss).backward()
             scaler.step(optimizer)
             scaler.update()
             
+            # Update metrics
             total_loss += batch_loss.item()
-            pbar.set_postfix({'loss': total_loss / ((i//batch_size)+1)})
+            correct_predictions += batch_correct
+            total_predictions += batch_total
+            
+            accuracy = batch_correct / batch_total if batch_total > 0 else 0
+            pbar.set_postfix({
+                'loss': batch_loss.item(), 
+                'accuracy': accuracy
+            })
+        
+        # Calculate epoch metrics
+        epoch_loss = total_loss / len(pbar) if len(pbar) > 0 else 0
+        epoch_acc = correct_predictions / total_predictions if total_predictions > 0 else 0
+        
+        print(f"Epoch {epoch}: Train Loss: {epoch_loss:.4f}, Accuracy: {epoch_acc:.4f}")
         
         # Validation
         model.eval()
         val_loss = 0
-        with torch.no_grad():
-            for src, tgt, true_nbr in val_triplets:
-                # Similar to training, but for validation
-                sampled = neighbor_sampler(
-                    torch.tensor([src], dtype=torch.long),
-                    data.edge_index,
-                    num_hops=2, 
-                    num_neighbors=20
-                ).tolist()
-                
-                if src not in sampled: 
-                    sampled.append(src)
-                if true_nbr not in sampled: 
-                    sampled.append(true_nbr)
-                
-                sampled_tensor = torch.tensor(sampled, dtype=torch.long)
-                sub_x, sub_edge_index, mapping = build_subgraph(data, sampled_tensor, device)
-                
-                batch_tensor = torch.zeros(sub_x.size(0), dtype=torch.long).to(device)
-                sub_h = model(sub_x, sub_edge_index, batch_tensor)
-                
-                tgt_emb = full_h[tgt]
-                logits = model.score_neighbors(sub_h, sampled, tgt_emb)
-                true_pos = mapping[true_nbr]
-                
-                loss = loss_fn(
-                    logits.unsqueeze(0),  # [1, M]
-                    torch.tensor([true_pos], device=device)
-                )
-                
-                val_loss += loss.item()
+        val_correct = 0
+        val_total = 0
         
-        val_loss /= len(val_triplets)
-        print(f"Epoch {epoch}, Train Loss: {total_loss/len(pbar):.4f}, Val Loss: {val_loss:.4f}")
+        with torch.no_grad():
+            for src, tgt, path in val_pairs:
+                if len(path) > 1:
+                    next_node = path[1]
+                    
+                    # Sample neighborhood
+                    sampled = neighbor_sampler(
+                        torch.tensor([src], dtype=torch.long),
+                        data.edge_index,
+                        num_hops=1, 
+                        num_neighbors=30
+                    ).tolist()
+                    
+                    if next_node not in sampled:
+                        sampled.append(next_node)
+                    
+                    # Build subgraph
+                    sampled_tensor = torch.tensor(sampled, dtype=torch.long)
+                    sub_x = data.x[sampled_tensor].to(device)
+                    
+                    # Create mapping
+                    mapping = {n: i for i, n in enumerate(sampled)}
+                    
+                    # Build edge index
+                    edge_list = []
+                    for e in range(data.edge_index.size(1)):
+                        source = data.edge_index[0, e].item()
+                        target = data.edge_index[1, e].item()
+                        if source in mapping and target in mapping:
+                            edge_list.append([mapping[source], mapping[target]])
+                    
+                    if edge_list:
+                        sub_edge_index = torch.tensor(edge_list, dtype=torch.long).t().to(device)
+                        
+                        # Compute embeddings
+                        batch_tensor = torch.zeros(sub_x.size(0), dtype=torch.long).to(device)
+                        sub_h = model(sub_x, sub_edge_index, batch_tensor)
+                        
+                        # Score neighbors
+                        tgt_emb = full_h[tgt].detach()
+                        logits = model.score_neighbors(sub_h, sampled, tgt_emb)
+                        true_pos = mapping[next_node]
+                        
+                        # Compute loss
+                        loss = loss_fn(
+                            logits.unsqueeze(0),
+                            torch.tensor([true_pos], device=device)
+                        )
+                        val_loss += loss.item()
+                        
+                        # Calculate accuracy
+                        pred = torch.argmax(logits).item()
+                        if pred == true_pos:
+                            val_correct += 1
+                        val_total += 1
+        
+        # Calculate validation metrics
+        val_loss = val_loss / val_total if val_total > 0 else float('inf')
+        val_acc = val_correct / val_total if val_total > 0 else 0
+        
+        print(f"Validation: Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}")
         
         # Update learning rate
         scheduler.step(val_loss)
@@ -233,12 +327,13 @@ def train_supervised(data, model, device, num_epochs=20, batch_size=16, num_pair
             patience_counter += 1
         
         # Save periodic checkpoint
-        if epoch % 5 == 0:
+        if epoch % 10 == 0:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
+                'val_loss': val_loss,
                 'best_val_loss': best_val_loss,
                 'best_epoch': best_epoch
             }, f"models/checkpoint_epoch_{epoch}.pt")
@@ -250,49 +345,11 @@ def train_supervised(data, model, device, num_epochs=20, batch_size=16, num_pair
     
     # Load the best model
     model.load_state_dict(torch.load("models/best_model.pt"))
+    
+    # Save final model
+    torch.save(model.state_dict(), "models/final_model.pt")
+    
     return model
-
-
-def build_subgraph(data, nodes, device):
-    """
-    Utility to extract x, edge_index, and a mapping {orig_idx:sub_idx}.
-    
-    Args:
-        data: Graph data object
-        nodes: List of node indices to include in the subgraph
-        device: Computation device
-        
-    Returns:
-        sub_x: Node features for the subgraph
-        sub_ei: Edge indices for the subgraph
-        mapping: Dictionary mapping original indices to subgraph indices
-    """
-    mapping = {int(n): i for i, n in enumerate(nodes)}
-    
-    # Extract subgraph features
-    sub_x = data.x[nodes].to(device)
-    
-    # Filter edges
-    edge_index = data.edge_index.to(device)
-    nodes_tensor = nodes.to(device)
-    
-    # Create masks for source and target nodes
-    src_mask = torch.isin(edge_index[0], nodes_tensor)
-    dst_mask = torch.isin(edge_index[1], nodes_tensor)
-    
-    # Only keep edges where both source and target are in the subgraph
-    edge_mask = src_mask & dst_mask
-    sub_ei = edge_index[:, edge_mask]
-    
-    # Remap edge indices to subgraph indexing
-    for d in (0, 1):
-        for j in range(sub_ei.size(1)):
-            node_idx = sub_ei[d, j].item()
-            if node_idx in mapping:
-                sub_ei[d, j] = mapping[node_idx]
-    
-    return sub_x, sub_ei, mapping
-
 
 def main():
     """Main training function"""
@@ -335,13 +392,13 @@ def main():
     
     # Train standard model
     print("\nTraining standard model...")
-    standard_model = train_supervised(
+    standard_model = train_path_predictor(
         data, 
         standard_model, 
         device, 
-        num_epochs=20, 
+        num_epochs=50, 
         batch_size=32, 
-        num_pairs=1000
+        num_train_pairs=1000
     )
     
     # Save final model
@@ -349,13 +406,13 @@ def main():
     
     # Train enhanced model
     print("\nTraining enhanced model...")
-    enhanced_model = train_supervised(
+    enhanced_model = train_path_predictor(
         data, 
         enhanced_model, 
         device, 
-        num_epochs=20, 
+        num_epochs=50, 
         batch_size=32, 
-        num_pairs=1000
+        num_train_pairs=1000
     )
     
     # Save final model
