@@ -55,16 +55,20 @@ class BaseTraverser:
         if num_hops is None:
             num_hops = self.num_hops
             
+        edge_index_cpu = self.data.edge_index.cpu()
+    
         sampled_nodes = neighbor_sampler(
             torch.tensor([node_idx], dtype=torch.long),
-            self.data.edge_index,
+            edge_index_cpu,  # Use CPU tensor
             num_hops=num_hops,
             num_neighbors=num_neighbors
         )
         
+        sampled_nodes = [n for n in sampled_nodes if n < self.data.x.size(0)]
+    
         self.nodes_explored += len(sampled_nodes)
         return sampled_nodes
-    
+        
     def build_subgraph(self, nodes, include_extra_nodes=None):
         """
         Extract a subgraph for the given nodes.
@@ -127,6 +131,13 @@ class BaseTraverser:
             scores: Scores for each node
             node_embeddings: Embeddings for each node
         """
+        sub_nodes = [n for n in sub_nodes if n < self.data.x.size(0)]
+    
+        # Check if we have any valid nodes
+        if not sub_nodes:
+            # Return dummy scores
+            return torch.zeros(0, device=self.device), torch.zeros((0, self.model.hidden_dim), device=self.device)
+        
         # Get node embeddings
         batch = torch.zeros(sub_x.size(0), dtype=torch.long).to(self.device)
         with torch.no_grad():
@@ -145,7 +156,7 @@ class BaseTraverser:
         
         return scores, node_embeddings
     
-    def traverse(self, start_node_id, target_node_id=None, max_steps=10):
+    def traverse(self, start_node_id, target_node_id=None, max_steps=10, method=None):
         """
         Base implementation for traversing from start to target.
         Simply follows the highest-scoring neighbor in each step.
@@ -154,6 +165,7 @@ class BaseTraverser:
             start_node_id: ID of the starting node
             target_node_id: ID of the target node (optional)
             max_steps: Maximum number of steps to take
+            method: Optional parameter (ignored in base traverser)
             
         Returns:
             path: List of node IDs in the traversal path

@@ -20,6 +20,8 @@ from utils import (
     visualize_performance_by_difficulty
 )
 
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 def load_models(data, device):
     """
     Load trained models.
@@ -88,9 +90,8 @@ def evaluate_traversers(data, standard_model, enhanced_model, device, num_test_p
     algorithms = {
         "BidirectionalBFS": (lambda s, t, max_steps: bidirectional_bfs_wrapper(data, s, t), {}),
         
-        "StandardGNN": (standard_traverser.traverse, {
-            "method": "bidirectional_guided" if hasattr(standard_traverser, "traverse_bidirectional") else None
-        }),
+        # Remove the method parameter since BaseTraverser doesn't support it
+        "StandardGNN": (standard_traverser.traverse, {}),
         
         "EnhancedBeam": (enhanced_traverser.traverse, {
             "method": "parallel_beam"
@@ -122,10 +123,11 @@ def evaluate_traversers(data, standard_model, enhanced_model, device, num_test_p
     test_visualizations(data, standard_traverser, enhanced_traverser, num_examples=3)
     
     return results, summary
-
-
 def bidirectional_bfs_wrapper(data, source_id, target_id):
     """Wrapper for bidirectional BFS to match the traverser interface"""
+    if source_id not in data.node_mapping or target_id not in data.node_mapping:
+        return [], 0
+    
     source_idx = data.node_mapping[source_id]
     target_idx = data.node_mapping[target_id]
     
@@ -155,3 +157,47 @@ def test_visualizations(data, standard_traverser, enhanced_traverser, num_exampl
         while True:
             source = random.choice(all_nodes)
             target = random.choice(all_nodes)
+
+def main():
+    """Main evaluation function"""
+    # Set random seed for reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
+    
+    # Check if GPU is available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # Create directories
+    os.makedirs('plots', exist_ok=True)
+    os.makedirs('models', exist_ok=True)
+    
+    # Load graph data
+    edge_file = "data/croc_edges.csv"  # Replace with your actual file path
+    max_nodes = 1000  # Adjust based on your needs and resources
+    data = load_graph_data(edge_file, feature_dim=64, max_nodes=max_nodes, ensure_connected=True)
+    print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
+    
+    # Load models
+    standard_model, enhanced_model = load_models(data, device)
+    
+    # Evaluate traversers
+    results, summary = evaluate_traversers(data, standard_model, enhanced_model, device, num_test_pairs=10)
+    
+    print("Evaluation complete. Results saved to 'plots/' directory.")
+
+    print("Summary statistics:")
+    for key, value in summary.items():
+        print(f"{key}: {value}")
+
+    print("Detailed results:")
+    for name, result in results.items():
+        print(f"{name}:")
+        for k, v in result.items():
+            print(f"  {k}: {v}")
+        print("-" * 50)
+
+
+if __name__ == "__main__":
+    main()

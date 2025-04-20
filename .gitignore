@@ -1,5 +1,5 @@
 venv
 __pycache__
 poetry.lock
-best_wiki_gnn_model.pt
 plots/*
+*pt
