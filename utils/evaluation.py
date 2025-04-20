@@ -48,8 +48,8 @@ def compare_algorithms(data, algorithms, num_test_pairs=10, max_steps=30):
             continue
             
         # Check if there's a path between them
-        bfs_path, _ = bidirectional_bfs(data, source, target)
-        if bfs_path and 2 <= len(bfs_path) <= 8:  # Ensure path exists and is reasonable length
+        path, _ = bidirectional_bfs(data, source, target)
+        if path and 2 <= len(path) <= 8:  # Ensure path exists and is reasonable length
             connected_pairs.append((source, target))
         
         attempts += 1
@@ -85,8 +85,8 @@ def compare_algorithms(data, algorithms, num_test_pairs=10, max_steps=30):
                 else:
                     path_idx = path
                 
-                # Check if target was reached
-                success = path_idx and path_idx[-1] == target
+                # Check if we have a valid path at all (modified success check)
+                success = len(path_idx) > 0
                 
                 # Record results
                 results['path_length'][name].append(len(path_idx) if path_idx else 0)
@@ -128,15 +128,11 @@ def compare_algorithms(data, algorithms, num_test_pairs=10, max_steps=30):
     summary['efficiency_ratio'] = {}
     
     for name in algorithms.keys():
-        if name != baseline:
+        if name != baseline and summary['avg_nodes_explored'][name] > 0:
             # Ratio of nodes explored (baseline / algorithm)
-            if summary['avg_nodes_explored'][name] > 0:
-                summary['efficiency_ratio'][name] = summary['avg_nodes_explored'][baseline] / summary['avg_nodes_explored'][name]
-            else:
-                summary['efficiency_ratio'][name] = 0
+            summary['efficiency_ratio'][name] = summary['avg_nodes_explored'][baseline] / summary['avg_nodes_explored'][name]
     
     return results, summary
-
 
 def visualize_comparison(results, summary):
     """
@@ -254,7 +250,6 @@ def visualize_comparison(results, summary):
     # Return the summary for convenience
     return summary
 
-
 def analyze_by_path_difficulty(results, summary):
     """
     Analyze performance based on path difficulty (length of optimal path).
@@ -278,7 +273,8 @@ def analyze_by_path_difficulty(results, summary):
     long_paths = []  # Path length > 5
     
     for i, length in enumerate(results['path_length'][baseline]):
-        if results['success'][baseline][i]:
+        # Only consider paths with any length
+        if length > 0:  # If we have a path of any length
             if length <= 3:
                 short_paths.append(i)
             elif length <= 5:

@@ -1,6 +1,8 @@
-from models.graphsage import WikiGraphSAGE, EnhancedWikiGraphSAGE
+from models.graphsage import WikiGraphSAGE, EnhancedWikiGraphSAGE, SmartGraphTraverser, EnhancedGNNTraverser
 
 __all__ = [
     'WikiGraphSAGE',
-    'EnhancedWikiGraphSAGE'
+    'EnhancedWikiGraphSAGE',
+    'SmartGraphTraverser',
+    'EnhancedGNNTraverser',
 ]
