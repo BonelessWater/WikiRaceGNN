@@ -67,7 +67,7 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
         "EnhancedBidirectional_3": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=3).traverse(s, t, max_steps),
         "EnhancedBidirectional_5": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=5).traverse(s, t, max_steps),
         "EnhancedBidirectional_10": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=10).traverse(s, t, max_steps),
-    }
+    } 
     
     # Generate test pairs
     all_nodes = list(range(data.x.size(0)))
