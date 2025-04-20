@@ -5,6 +5,8 @@ import random
 import networkx as nx
 from torch_geometric.data import Data
 from torch_geometric.utils import to_undirected
+from traversal.utils import bidirectional_bfs
+from tqdm import tqdm
 
 def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=True):
     """
@@ -155,3 +157,78 @@ def neighbor_sampler(nodes, edge_index, num_hops=2, num_neighbors=10):
         current_nodes = next_nodes
     
     return torch.tensor(list(sampled_nodes), dtype=torch.long)
+
+def generate_test_pairs(data, num_pairs=30):
+    """
+    Generate test pairs with balanced path lengths: short, medium, and long.
+    This ensures comprehensive evaluation across different path difficulties.
+    """
+    all_nodes = list(range(data.x.size(0)))
+    short_pairs = []  # 2-3 hops
+    medium_pairs = []  # 4-6 hops
+    long_pairs = []   # 7+ hops
+    
+    attempts = 0
+    max_attempts = 5000
+    target_per_category = num_pairs // 3
+    
+    print("Generating test pairs with varied path lengths...")
+    
+    with tqdm(total=num_pairs) as pbar:
+        while (len(short_pairs) < target_per_category or 
+              len(medium_pairs) < target_per_category or 
+              len(long_pairs) < target_per_category) and attempts < max_attempts:
+            
+            source = random.choice(all_nodes)
+            target = random.choice(all_nodes)
+            
+            if source == target:
+                attempts += 1
+                continue
+                
+            # Find path using BFS
+            path, _ = bidirectional_bfs(data, source, target)
+            
+            if not path:
+                attempts += 1
+                continue
+                
+            path_length = len(path)
+            
+            # Categorize based on path length
+            if path_length <= 3 and len(short_pairs) < target_per_category:
+                if (source, target) not in short_pairs:
+                    short_pairs.append((source, target))
+                    pbar.update(1)
+            elif 4 <= path_length <= 6 and len(medium_pairs) < target_per_category:
+                if (source, target) not in medium_pairs:
+                    medium_pairs.append((source, target))
+                    pbar.update(1)
+            elif path_length >= 7 and len(long_pairs) < target_per_category:
+                if (source, target) not in long_pairs:
+                    long_pairs.append((source, target))
+                    pbar.update(1)
+                
+            attempts += 1
+            
+            # Update progress
+            pbar.set_postfix({
+                'short': len(short_pairs), 
+                'medium': len(medium_pairs), 
+                'long': len(long_pairs),
+                'attempts': attempts
+            })
+    
+    # Combine all pairs
+    all_pairs = short_pairs + medium_pairs + long_pairs
+    random.shuffle(all_pairs)
+    
+    if len(short_pairs) < target_per_category:
+        print(f"Warning: Could only find {len(short_pairs)} short paths")
+    if len(medium_pairs) < target_per_category:
+        print(f"Warning: Could only find {len(medium_pairs)} medium paths")
+    if len(long_pairs) < target_per_category:
+        print(f"Warning: Could only find {len(long_pairs)} long paths")
+        
+    print(f"Generated {len(short_pairs)} short, {len(medium_pairs)} medium, and {len(long_pairs)} long paths")
+    return all_pairs, {'short': short_pairs, 'medium': medium_pairs, 'long': long_pairs}

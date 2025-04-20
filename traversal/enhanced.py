@@ -1,9 +1,7 @@
 import torch
 import torch.nn.functional as F
 import heapq
-from collections import defaultdict, deque
 from traversal.base import BaseTraverser
-from utils.data import neighbor_sampler
 
 class EnhancedWikiTraverser(BaseTraverser):
     """
@@ -377,10 +375,15 @@ class ImprovedGraphTraverser:
         self.beam_width = beam_width
         self.heuristic_weight = heuristic_weight
         self.embedding_cache = {}
+        self.nodes_explored = 0
         
         # Ensure model is on the correct device and in eval mode
         self.model = self.model.to(self.device)
         self.model.eval()
+        
+    def reset_counter(self):
+        """Reset the counter for nodes explored"""
+        self.nodes_explored = 0
         
     def get_node_embedding(self, node_idx):
         """Get node embedding with caching for efficiency"""
@@ -405,206 +408,102 @@ class ImprovedGraphTraverser:
             emb2 = emb2.to(emb1.device)
             
         # Calculate and return cosine similarity
-        return F.cosine_similarity(emb1, emb2).item()
+        return F.cosine_similarity(emb1, emb2, dim=1).item()
     
     def beam_search(self, source_idx, target_idx, max_steps=50):
         """
         Beam search with GNN guidance, combining embedding similarity
         with bidirectional search for better performance.
         """
-        # For small distances, just use bidirectional search directly
-        source_emb = self.get_node_embedding(source_idx)
-        target_emb = self.get_node_embedding(target_idx)
-        similarity = self.get_similarity(source_emb, target_emb)
+        # Reset counter
+        self.reset_counter()
         
         # Handle identical nodes
         if source_idx == target_idx:
             return [source_idx], 1
-            
-        # Nodes with high similarity might be just a few hops away
-        # Use different strategies based on similarity
-        if similarity > 0.7:  # Very similar nodes - likely close
-            return self.greedy_search(source_idx, target_idx, max_steps)
-        else:
-            # Use bidirectional beam search for more distant nodes
-            return self.bidirectional_beam_search(source_idx, target_idx, max_steps)
-    
-    def greedy_search(self, source_idx, target_idx, max_steps=30):
-        """Simple greedy search for nearby nodes"""
-        visited = {source_idx}
-        path = [source_idx]
-        current = source_idx
-        target_emb = self.get_node_embedding(target_idx)
-        nodes_explored = 1
-        
-        for _ in range(max_steps):
-            if current == target_idx:
-                return path, nodes_explored
-                
-            # Get all neighbors
-            neighbors = self.data.adj_list.get(current, [])
-            if not neighbors:
-                break
-                
-            # Filter unvisited neighbors
-            valid_neighbors = [n for n in neighbors if n not in visited]
-            if not valid_neighbors:
-                break
-                
-            # Score each neighbor by similarity to target
-            best_neighbor = None
-            best_score = float('-inf')
-            
-            for neighbor in valid_neighbors:
-                nodes_explored += 1
-                neighbor_emb = self.get_node_embedding(neighbor)
-                score = self.get_similarity(neighbor_emb, target_emb)
-                
-                if score > best_score:
-                    best_score = score
-                    best_neighbor = neighbor
-            
-            if best_neighbor is None:
-                break
-                
-            # Move to the best neighbor
-            current = best_neighbor
-            path.append(current)
-            visited.add(current)
-            
-            # Early success
-            if current == target_idx:
-                return path, nodes_explored
-        
-        return [], nodes_explored
-    
-    def bidirectional_beam_search(self, source_idx, target_idx, max_steps=50):
-        """
-        Bidirectional beam search that explores from both source and target
-        simultaneously, guided by the learned embeddings.
-        """
-        # Initialize forward and backward search
-        forward_queue = [(0, [source_idx])]  # (score, path)
-        backward_queue = [(0, [target_idx])]  # (score, path)
-        
-        forward_visited = {source_idx: [source_idx]} 
-        backward_visited = {target_idx: [target_idx]}
         
         # Get embeddings
         source_emb = self.get_node_embedding(source_idx)
         target_emb = self.get_node_embedding(target_idx)
         
-        # Track exploration
-        nodes_explored = 1
+        # Initialize beam search
+        # Format: (score, path)
+        visited = {source_idx}
+        current_beams = [(0.0, [source_idx])]
         
-        # For connecting paths
-        meeting_node = None
-        best_path = None
+        # Exploration counter
+        self.nodes_explored = 1
         
-        # Main search loop
         for step in range(max_steps):
-            # Check if we should explore forward or backward
-            if step % 2 == 0 and forward_queue:
-                # Forward step
-                new_queue = []
+            if not current_beams:
+                break
                 
-                # Process all paths in the current beam
-                for _, path in forward_queue:
-                    current = path[-1]
-                    
-                    # Get neighbors
-                    neighbors = self.data.adj_list.get(current, [])
-                    
-                    for neighbor in neighbors:
-                        if neighbor not in {node for node in path}:
-                            # Add to visited with path
-                            new_path = path + [neighbor]
-                            forward_visited[neighbor] = new_path
-                            
-                            # Check if we found a meeting point
-                            if neighbor in backward_visited:
-                                # Connect paths
-                                backward_path = backward_visited[neighbor]
-                                # Complete path (removing duplicate meeting point)
-                                complete_path = new_path[:-1] + backward_path[::-1]
-                                
-                                # Check if this is better than current best
-                                if best_path is None or len(complete_path) < len(best_path):
-                                    best_path = complete_path
-                                    meeting_node = neighbor
-                            
-                            # Get neighbor embedding and score it
-                            nodes_explored += 1
-                            neighbor_emb = self.get_node_embedding(neighbor)
-                            score = self.get_similarity(neighbor_emb, target_emb)
-                            
-                            # Add to beam
-                            new_queue.append((score, new_path))
-                
-                # Sort and keep the top beam_width paths
-                new_queue.sort(key=lambda x: x[0], reverse=True)
-                forward_queue = new_queue[:self.beam_width]
-                
-            elif backward_queue:
-                # Backward step
-                new_queue = []
-                
-                # Process all paths in the current beam
-                for _, path in backward_queue:
-                    current = path[-1]
-                    
-                    # Get neighbors (incoming edges for backward search)
-                    neighbors = []
-                    for i in range(self.data.edge_index.size(1)):
-                        if self.data.edge_index[1, i].item() == current:
-                            neighbors.append(self.data.edge_index[0, i].item())
-                    
-                    for neighbor in neighbors:
-                        if neighbor not in {node for node in path}:
-                            # Add to visited with path
-                            new_path = path + [neighbor]
-                            backward_visited[neighbor] = new_path
-                            
-                            # Check if we found a meeting point
-                            if neighbor in forward_visited:
-                                # Connect paths
-                                forward_path = forward_visited[neighbor]
-                                # Complete path (removing duplicate meeting point)
-                                complete_path = forward_path[:-1] + new_path[::-1]
-                                
-                                # Check if this is better than current best
-                                if best_path is None or len(complete_path) < len(best_path):
-                                    best_path = complete_path
-                                    meeting_node = neighbor
-                            
-                            # Get neighbor embedding and score it
-                            nodes_explored += 1
-                            neighbor_emb = self.get_node_embedding(neighbor)
-                            score = self.get_similarity(neighbor_emb, source_emb)
-                            
-                            # Add to beam
-                            new_queue.append((score, new_path))
-                
-                # Sort and keep the top beam_width paths
-                new_queue.sort(key=lambda x: x[0], reverse=True)
-                backward_queue = new_queue[:self.beam_width]
+            # Create next generation of beams
+            next_beams = []
             
-            # Early termination if we found a path
-            if best_path is not None:
-                return best_path, nodes_explored
+            # Expand each beam
+            for _, path in current_beams:
+                current = path[-1]
+                
+                # Check if we've reached the target
+                if current == target_idx:
+                    return path, self.nodes_explored
+                
+                # Get neighbors
+                neighbors = self.data.adj_list.get(current, [])
+                if not neighbors:
+                    continue
+                    
+                # Filter unvisited neighbors
+                valid_neighbors = []
+                for neighbor in neighbors:
+                    if neighbor not in visited:
+                        valid_neighbors.append(neighbor)
+                        visited.add(neighbor)
+                        self.nodes_explored += 1
+                
+                # Score each valid neighbor
+                for neighbor in valid_neighbors:
+                    # Get embedding and calculate similarity to target
+                    neighbor_emb = self.get_node_embedding(neighbor)
+                    similarity = self.get_similarity(neighbor_emb, target_emb)
+                    
+                    # Create new path
+                    new_path = path + [neighbor]
+                    
+                    # Add to candidates
+                    next_beams.append((similarity, new_path))
+                    
+                    # Early success detection
+                    if neighbor == target_idx:
+                        return new_path, self.nodes_explored
+            
+            # If no valid expansions, break
+            if not next_beams:
+                break
+                
+            # Sort by score (highest first) and keep top-k
+            next_beams.sort(key=lambda x: x[0], reverse=True)
+            current_beams = next_beams[:self.beam_width]
         
-        # No path found within max_steps
-        return [], nodes_explored
+        # Return best path found
+        if current_beams:
+            best_beam = max(current_beams, key=lambda x: x[0])
+            return best_beam[1], self.nodes_explored
+        
+        # No path found
+        return [], self.nodes_explored
     
-    def traverse(self, data, source_id, target_id, max_steps=50):
+    def traverse(self, source_id, target_id, max_steps=50):
         """Main traversal method with error handling"""
         try:
             # Convert IDs to indices
             if source_id not in self.data.node_mapping or target_id not in self.data.node_mapping:
+                print(f"Warning: source_id {source_id} or target_id {target_id} not in node mapping")
                 return [], 0
                 
             source_idx = self.data.node_mapping[source_id]
-            target_idx = data.node_mapping[target_id]
+            target_idx = self.data.node_mapping[target_id]
             
             # Use beam search to find path
             path, nodes_explored = self.beam_search(source_idx, target_idx, max_steps)
@@ -615,9 +514,11 @@ class ImprovedGraphTraverser:
             return path_ids, nodes_explored
             
         except Exception as e:
-            print(f"Error in traverse: {e}")
+            print(f"Error in ImprovedGraphTraverser.traverse: {e}")
+            import traceback
+            traceback.print_exc()
             return [], 0
-        
+               
 class SmartGraphTraverser:
     """
     A traverser that uses the trained GNN models to guide the search
@@ -859,3 +760,196 @@ class EnhancedGNNTraverser:
         
         return [], nodes_explored
     
+class EnhancedBidirectionalTraverser:
+    """
+    Enhanced bidirectional traverser that uses the GNN model to guide both
+    forward and backward searches simultaneously.
+    """
+    def __init__(self, model, data, device, beam_width=3):
+        self.model = model
+        self.data = data
+        self.device = device
+        self.beam_width = beam_width
+        self.embedding_cache = {}
+        self.nodes_explored = 0
+        
+        # Ensure model is in eval mode
+        self.model = self.model.to(self.device)
+        self.model.eval()
+    
+    def reset_counter(self):
+        """Reset exploration counter"""
+        self.nodes_explored = 0
+        
+    def get_node_embedding(self, node_idx):
+        """Get node embedding with caching"""
+        if node_idx in self.embedding_cache:
+            return self.embedding_cache[node_idx]
+            
+        with torch.no_grad():
+            # Get features
+            x = self.data.x[node_idx].unsqueeze(0).to(self.device)
+            
+            # Get embedding
+            embedding = self.model.embedding(x)
+            
+            # Cache and return
+            self.embedding_cache[node_idx] = embedding
+            return embedding
+            
+    def get_similarity(self, emb1, emb2):
+        """Calculate similarity between embeddings"""
+        # Ensure both are on same device
+        if emb1.device != emb2.device:
+            emb2 = emb2.to(emb1.device)
+            
+        # Calculate cosine similarity
+        return F.cosine_similarity(emb1, emb2, dim=1).item()
+    
+    def bidirectional_search(self, source_idx, target_idx, max_steps=50):
+        """
+        Bidirectional search guided by GNN embeddings.
+        Explores from both source and target simultaneously.
+        """
+        # Reset exploration counter
+        self.reset_counter()
+        
+        # Handle identical nodes
+        if source_idx == target_idx:
+            return [source_idx], 1
+            
+        # Get embeddings
+        source_emb = self.get_node_embedding(source_idx)
+        target_emb = self.get_node_embedding(target_idx)
+        
+        # Initialize forward and backward queues
+        # Format: (priority, path)
+        forward_queue = [(0.0, [source_idx])]
+        backward_queue = [(0.0, [target_idx])]
+        
+        # Track visited nodes with their paths
+        forward_visited = {source_idx: [source_idx]}
+        backward_visited = {target_idx: [target_idx]}
+        
+        # Exploration counter
+        self.nodes_explored = 2  # Source and target
+        
+        # Track best meeting point
+        best_path = None
+        
+        # Main search loop
+        for _ in range(max_steps):
+            # Check if we should explore forward or backward
+            if len(forward_queue) <= len(backward_queue) and forward_queue:
+                # Forward step
+                direction = "forward"
+                queue = forward_queue
+                visited = forward_visited
+                other_visited = backward_visited
+                target_embedding = target_emb
+            elif backward_queue:
+                # Backward step
+                direction = "backward"
+                queue = backward_queue
+                visited = backward_visited
+                other_visited = forward_visited
+                target_embedding = source_emb
+            else:
+                # Both queues empty, no path found
+                break
+                
+            # Create next generation
+            next_queue = []
+            
+            # Process top beam_width paths
+            for priority, path in queue[:self.beam_width]:
+                current = path[-1]
+                
+                # Get neighbors
+                if direction == "forward":
+                    neighbors = self.data.adj_list.get(current, [])
+                else:
+                    # For backward direction, get incoming edges
+                    neighbors = []
+                    for i in range(self.data.edge_index.size(1)):
+                        if self.data.edge_index[1, i].item() == current:
+                            neighbors.append(self.data.edge_index[0, i].item())
+                
+                # Process neighbors
+                for neighbor in neighbors:
+                    # Skip visited nodes in this direction
+                    if neighbor in visited:
+                        continue
+                        
+                    # Create new path
+                    new_path = path + [neighbor]
+                    visited[neighbor] = new_path
+                    self.nodes_explored += 1
+                    
+                    # Check if this creates a connection
+                    if neighbor in other_visited:
+                        # We found a meeting point!
+                        if direction == "forward":
+                            forward_path = new_path
+                            backward_path = other_visited[neighbor]
+                            # Combine paths (reverse backward path, remove duplicate)
+                            complete_path = forward_path[:-1] + backward_path[::-1]
+                        else:
+                            forward_path = other_visited[neighbor]
+                            backward_path = new_path
+                            # Combine paths (reverse backward path, remove duplicate)
+                            complete_path = forward_path[:-1] + backward_path[::-1]
+                            
+                        # Update best path if shorter
+                        if best_path is None or len(complete_path) < len(best_path):
+                            best_path = complete_path
+                    
+                    # Score this neighbor
+                    neighbor_emb = self.get_node_embedding(neighbor)
+                    similarity = self.get_similarity(neighbor_emb, target_embedding)
+                    
+                    # Add to next queue
+                    next_queue.append((similarity, new_path))
+            
+            # Sort by priority and update queue
+            next_queue.sort(key=lambda x: x[0], reverse=True)
+            if direction == "forward":
+                forward_queue = next_queue
+            else:
+                backward_queue = next_queue
+            
+            # Check if we've found a path
+            if best_path is not None:
+                return best_path, self.nodes_explored
+        
+        # Return best path if found
+        if best_path is not None:
+            return best_path, self.nodes_explored
+            
+        # No path found
+        return [], self.nodes_explored
+    
+    def traverse(self, source_id, target_id, max_steps=50):
+        """Main traversal method with error handling"""
+        try:
+            # Convert IDs to indices
+            if source_id not in self.data.node_mapping or target_id not in self.data.node_mapping:
+                print(f"Warning: source_id {source_id} or target_id {target_id} not in node mapping")
+                return [], 0
+                
+            source_idx = self.data.node_mapping[source_id]
+            target_idx = self.data.node_mapping[target_id]
+            
+            # Perform bidirectional search
+            path, nodes_explored = self.bidirectional_search(source_idx, target_idx, max_steps)
+            
+            # Convert path indices back to IDs
+            path_ids = [self.data.reverse_mapping[idx] for idx in path]
+            
+            return path_ids, nodes_explored
+            
+        except Exception as e:
+            print(f"Error in EnhancedBidirectionalTraverser.traverse: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], 0

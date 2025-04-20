@@ -3,8 +3,8 @@ import torch
 import os
 import numpy as np
 import random
-from models import WikiGraphSAGE, EnhancedWikiGraphSAGE
-from traversal import BaseTraverser, EnhancedWikiTraverser
+from models import EnhancedWikiGraphSAGE
+from traversal import EnhancedWikiTraverser
 from utils import load_graph_data
 
 def parse_args():
@@ -57,7 +57,6 @@ def parse_args():
     
     return parser.parse_args()
 
-
 def run_training(args):
     """Run training mode"""
     from train import main as train_main
@@ -65,14 +64,12 @@ def run_training(args):
     print("Starting training...")
     train_main()
 
-
 def run_evaluation(args):
     """Run evaluation mode"""
     from evaluate import main as evaluate_main
     
     print("Starting evaluation...")
     evaluate_main()
-
 
 def run_traversal(args, data, device):
     """Run traversal mode"""
@@ -208,7 +205,6 @@ def run_traversal(args, data, device):
         
         print("\nVisualizations saved to 'plots/' directory")
 
-
 def main():
     """Main function"""
     args = parse_args()
@@ -243,7 +239,6 @@ def main():
         print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
         
         run_traversal(args, data, device)
-
 
 if __name__ == "__main__":
     main()

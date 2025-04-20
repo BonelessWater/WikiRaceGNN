@@ -371,6 +371,94 @@ def visualize_path_distances(path_lengths, algorithm_names):
     
     print("Path length distribution visualization saved to 'path_length_distribution.png'")
 
+def visualize_results_by_difficulty(results, test_pairs_by_difficulty, algorithms, data):
+    """
+    Create visualizations that compare algorithm performance across different path difficulties.
+    
+    Args:
+        results: Results dictionary from compare_algorithms
+        test_pairs_by_difficulty: Dictionary of {difficulty: [(src, tgt), ...]}
+        algorithms: List of algorithm names
+    """
+    # Create a figure for path length comparison by difficulty
+    plt.figure(figsize=(15, 10))
+    
+    # Setup positions for the grouped bars
+    difficulties = list(test_pairs_by_difficulty.keys())
+    n_groups = len(difficulties)
+    n_algorithms = len(algorithms)
+    width = 0.8 / n_algorithms
+    
+    # Calculate indices for each difficulty group
+    indices = np.arange(len(difficulties))
+    
+    # Create a color map for the algorithms
+    colors = plt.cm.viridis(np.linspace(0, 0.9, n_algorithms))
+    
+    # Metrics to visualize
+    metrics = [
+        ('Success Rate', 'success', lambda x: np.mean(x) * 100),  # Convert to percentage
+        ('Avg Nodes Explored', 'nodes_explored', np.mean),
+        ('Avg Path Length', 'path_length', np.mean)
+    ]
+    
+    # Create a subplot for each metric
+    for i, (title, metric, agg_func) in enumerate(metrics):
+        plt.subplot(3, 1, i+1)
+        
+        for j, algo in enumerate(algorithms):
+            # Extract data for this algorithm and metric across difficulties
+            data_by_difficulty = []
+            
+            for diff in difficulties:
+                # Get indices of test pairs for this difficulty
+                diff_indices = []
+                for src, tgt in test_pairs_by_difficulty[diff]:
+                    src_id = data.reverse_mapping[src]
+                    tgt_id = data.reverse_mapping[tgt]
+                    
+                    # Find the index in results
+                    for k, (s, t) in enumerate(zip(results['source'], results['target'])):
+                        if s == src_id and t == tgt_id:
+                            diff_indices.append(k)
+                            break
+                
+                # Get metric values for these indices
+                values = [results[metric][algo][idx] for idx in diff_indices]
+                
+                # For path length, only consider successful paths
+                if metric == 'path_length':
+                    successes = [results['success'][algo][idx] for idx in diff_indices]
+                    values = [v for v, s in zip(values, successes) if s]
+                
+                # Calculate aggregate value
+                agg_value = agg_func(values) if values else 0
+                data_by_difficulty.append(agg_value)
+            
+            # Plot the bars for this algorithm
+            bar_positions = indices + (j - n_algorithms/2 + 0.5) * width
+            bars = plt.bar(bar_positions, data_by_difficulty, width, 
+                        label=algo if i == 0 else "", color=colors[j])
+            
+            # Add value labels above bars
+            for bar, value in zip(bars, data_by_difficulty):
+                height = bar.get_height()
+                plt.text(bar.get_x() + bar.get_width()/2., height + 0.01 * plt.ylim()[1],
+                      f'{value:.1f}', ha='center', va='bottom', fontsize=8)
+        
+        # Add labels and adjust plot
+        plt.title(title)
+        plt.xticks(indices, [d.capitalize() for d in difficulties])
+        plt.grid(axis='y', alpha=0.3)
+        
+        # Add legend to the first subplot only
+        if i == 0:
+            plt.legend(loc='upper right')
+    
+    plt.tight_layout()
+    plt.savefig('plots/performance_by_difficulty_detailed.png')
+    
+    print("Detailed performance visualization saved to 'plots/performance_by_difficulty_detailed.png'")
 
 def visualize_performance_by_difficulty(difficulty_stats, algorithm_names):
     """

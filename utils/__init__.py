@@ -1,4 +1,4 @@
-from utils.data import load_graph_data, neighbor_sampler
+from utils.data import load_graph_data, neighbor_sampler, generate_test_pairs
 from utils.visualization import (
     plot_graph_sample, 
     visualize_embeddings,
@@ -6,13 +6,15 @@ from utils.visualization import (
     compare_paths_visualization,
     visualize_node_exploration,
     visualize_path_distances,
-    visualize_performance_by_difficulty
+    visualize_performance_by_difficulty,
+    visualize_results_by_difficulty
 )
 from utils.evaluation import (
     compare_algorithms,
     visualize_comparison,
     analyze_by_path_difficulty
 )
+
 from traversal.utils import bidirectional_bfs
 
 __all__ = [
@@ -28,5 +30,7 @@ __all__ = [
     'compare_algorithms',
     'visualize_comparison',
     'analyze_by_path_difficulty',
-    'bidirectional_bfs'
+    'bidirectional_bfs',
+    'visualize_results_by_difficulty',
+    'generate_test_pairs'
 ]

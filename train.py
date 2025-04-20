@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 import os
 import random
-import time
 from tqdm import tqdm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.preprocessing import StandardScaler
@@ -423,7 +421,6 @@ def main():
     visualize_embeddings(enhanced_model, data, device, sample_size=500)
     
     print("Training complete. Models saved to 'models/' directory.")
-
 
 if __name__ == "__main__":
     main()

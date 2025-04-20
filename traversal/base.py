@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from utils.data import neighbor_sampler
 
 class BaseTraverser:

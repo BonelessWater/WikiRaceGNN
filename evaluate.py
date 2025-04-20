@@ -3,9 +3,6 @@ import numpy as np
 import random
 import os
 import time
-from collections import defaultdict
-from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 from models import WikiGraphSAGE, EnhancedWikiGraphSAGE
 from traversal.enhanced import ImprovedGraphTraverser, EnhancedGNNTraverser, SmartGraphTraverser
@@ -16,8 +13,9 @@ from utils import (
     analyze_by_path_difficulty,
     visualize_path_distances,
     visualize_performance_by_difficulty,
-    visualize_path,
-    compare_paths_visualization
+    compare_paths_visualization,
+    visualize_results_by_difficulty,
+    generate_test_pairs,
 )
 
 def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
@@ -47,10 +45,13 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     else:
         print("Enhanced model not found, using random weights")
     
+    standard_model.eval()
+    enhanced_model.eval()
+
     # Create traversers
-    from traversal.enhanced import ImprovedGraphTraverser
-    improved_standard = ImprovedGraphTraverser(standard_model, data, device, beam_width=3)
-    improved_enhanced = ImprovedGraphTraverser(enhanced_model, data, device, beam_width=5)
+    from traversal.enhanced import ImprovedGraphTraverser, EnhancedBidirectionalTraverser
+    improved_standard = ImprovedGraphTraverser(standard_model, data, device, beam_width=20)
+    improved_enhanced = ImprovedGraphTraverser(enhanced_model, data, device, beam_width=10)
     
     # Get baseline traversers
     baseline_standard = SmartGraphTraverser(standard_model, data, device)
@@ -59,9 +60,13 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     # Define algorithms to compare
     algorithms = {
         "BidirectionalBFS": lambda s, t, max_steps: bidirectional_bfs_wrapper(data, s, t, max_steps),
-        "BaselineGNN": lambda s, t, max_steps: baseline_standard.traverse(s, t, max_steps),
-        "ImprovedGNN": lambda s, t, max_steps: improved_standard.traverse(s, t, max_steps),
-        "EnhancedBidirectional": lambda s, t, max_steps: improved_enhanced.traverse(s, t, max_steps)
+        "SmartGraph": lambda s, t, max_steps: baseline_standard.traverse(s, t, max_steps),
+        "Improved_20": lambda s, t, max_steps: improved_standard.traverse(s, t, max_steps),
+        "Improved_10": lambda s, t, max_steps: improved_enhanced.traverse(s, t, max_steps),
+        "EnhancedGNN": lambda s, t, max_steps: baseline_enhanced.traverse(s, t, max_steps),
+        "EnhancedBidirectional_3": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=3).traverse(s, t, max_steps),
+        "EnhancedBidirectional_5": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=5).traverse(s, t, max_steps),
+        "EnhancedBidirectional_10": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=10).traverse(s, t, max_steps),
     }
     
     # Generate test pairs
@@ -71,15 +76,21 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     print("Generating test pairs...")
     for _ in range(num_pairs):
         # Select random source and target
-        while True:
+        attempts = 0
+        max_attempts = 100
+        
+        while attempts < max_attempts:
             source = random.choice(all_nodes)
             target = random.choice(all_nodes)
             if source != target:
-                # Check if there's a path
+                # Check if there's a path using BFS
                 path, _ = bidirectional_bfs(data, source, target)
-                if path:
-                    test_pairs.append((source, target))
+                if path and len(path) > 1 and len(path) <= 10:  # Reasonable path length
+                    source_id = data.reverse_mapping[source]
+                    target_id = data.reverse_mapping[target]
+                    test_pairs.append((source_id, target_id))
                     break
+            attempts += 1
     
     # Run evaluation
     results = {
@@ -89,11 +100,12 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
         'time': {name: [] for name in algorithms}
     }
     
-    for i, (source, target) in enumerate(test_pairs):
-        source_id = data.reverse_mapping[source]
-        target_id = data.reverse_mapping[target]
-        
+    for i, (source_id, target_id) in enumerate(test_pairs):
         print(f"\nTest {i+1}/{len(test_pairs)}: {source_id} → {target_id}")
+        
+        # Convert to indices
+        source = data.node_mapping[source_id]
+        target = data.node_mapping[target_id]
         
         # Get optimal path using BFS
         bfs_path, bfs_nodes = bidirectional_bfs(data, source, target)
@@ -128,9 +140,13 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
         'avg_path_length': {name: np.mean([l for l, s in zip(results['path_length'][name], results['success'][name]) if s]) 
                            if any(results['success'][name]) else 0 
                            for name in algorithms},
-        'avg_nodes_explored': {name: np.mean(results['nodes_explored'][name]) for name in algorithms},
+        'avg_nodes_explored': {name: np.mean([n for n, s in zip(results['nodes_explored'][name], results['success'][name]) if s])
+                             if any(results['success'][name]) else 0
+                             for name in algorithms},
         'success_rate': {name: np.mean(results['success'][name]) for name in algorithms},
-        'avg_time': {name: np.mean(results['time'][name]) for name in algorithms}
+        'avg_time': {name: np.mean([t for t, s in zip(results['time'][name], results['success'][name]) if s])
+                   if any(results['success'][name]) else 0
+                   for name in algorithms}
     }
     
     # Print summary
@@ -147,9 +163,7 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     
     # Visualize paths for an example
     if test_pairs:
-        source, target = test_pairs[0]
-        source_id = data.reverse_mapping[source]
-        target_id = data.reverse_mapping[target]
+        source_id, target_id = test_pairs[0]
         
         print(f"\nVisualizing paths for {source_id} → {target_id}...")
         
@@ -161,7 +175,7 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
                 paths[name] = [data.node_mapping[node_id] for node_id in path 
                               if node_id in data.node_mapping]
         
-        # Create visualization
+        # Create visualization if any paths found
         if paths:
             os.makedirs('plots', exist_ok=True)
             compare_paths_visualization(
@@ -192,81 +206,6 @@ def bidirectional_bfs_wrapper(data, source_id, target_id, max_steps=None):
         print(f"Error in bidirectional_bfs_wrapper: {e}")
         return [], 0
         
-def generate_test_pairs(data, num_pairs=30):
-    """
-    Generate test pairs with balanced path lengths: short, medium, and long.
-    This ensures comprehensive evaluation across different path difficulties.
-    """
-    all_nodes = list(range(data.x.size(0)))
-    short_pairs = []  # 2-3 hops
-    medium_pairs = []  # 4-6 hops
-    long_pairs = []   # 7+ hops
-    
-    attempts = 0
-    max_attempts = 5000
-    target_per_category = num_pairs // 3
-    
-    print("Generating test pairs with varied path lengths...")
-    
-    with tqdm(total=num_pairs) as pbar:
-        while (len(short_pairs) < target_per_category or 
-              len(medium_pairs) < target_per_category or 
-              len(long_pairs) < target_per_category) and attempts < max_attempts:
-            
-            source = random.choice(all_nodes)
-            target = random.choice(all_nodes)
-            
-            if source == target:
-                attempts += 1
-                continue
-                
-            # Find path using BFS
-            path, _ = bidirectional_bfs(data, source, target)
-            
-            if not path:
-                attempts += 1
-                continue
-                
-            path_length = len(path)
-            
-            # Categorize based on path length
-            if path_length <= 3 and len(short_pairs) < target_per_category:
-                if (source, target) not in short_pairs:
-                    short_pairs.append((source, target))
-                    pbar.update(1)
-            elif 4 <= path_length <= 6 and len(medium_pairs) < target_per_category:
-                if (source, target) not in medium_pairs:
-                    medium_pairs.append((source, target))
-                    pbar.update(1)
-            elif path_length >= 7 and len(long_pairs) < target_per_category:
-                if (source, target) not in long_pairs:
-                    long_pairs.append((source, target))
-                    pbar.update(1)
-                
-            attempts += 1
-            
-            # Update progress
-            pbar.set_postfix({
-                'short': len(short_pairs), 
-                'medium': len(medium_pairs), 
-                'long': len(long_pairs),
-                'attempts': attempts
-            })
-    
-    # Combine all pairs
-    all_pairs = short_pairs + medium_pairs + long_pairs
-    random.shuffle(all_pairs)
-    
-    if len(short_pairs) < target_per_category:
-        print(f"Warning: Could only find {len(short_pairs)} short paths")
-    if len(medium_pairs) < target_per_category:
-        print(f"Warning: Could only find {len(medium_pairs)} medium paths")
-    if len(long_pairs) < target_per_category:
-        print(f"Warning: Could only find {len(long_pairs)} long paths")
-        
-    print(f"Generated {len(short_pairs)} short, {len(medium_pairs)} medium, and {len(long_pairs)} long paths")
-    return all_pairs, {'short': short_pairs, 'medium': medium_pairs, 'long': long_pairs}
-
 def compare_algorithms(data, algorithms, test_pairs, max_steps=100):
     """
     Compare different path finding algorithms with detailed metrics.
@@ -395,95 +334,6 @@ def compare_algorithms(data, algorithms, test_pairs, max_steps=100):
             summary['efficiency_ratio'][name] = summary['avg_nodes_explored'][baseline] / summary['avg_nodes_explored'][name]
     
     return results, summary
-
-def visualize_results_by_difficulty(results, test_pairs_by_difficulty, algorithms, data):
-    """
-    Create visualizations that compare algorithm performance across different path difficulties.
-    
-    Args:
-        results: Results dictionary from compare_algorithms
-        test_pairs_by_difficulty: Dictionary of {difficulty: [(src, tgt), ...]}
-        algorithms: List of algorithm names
-    """
-    # Create a figure for path length comparison by difficulty
-    plt.figure(figsize=(15, 10))
-    
-    # Setup positions for the grouped bars
-    difficulties = list(test_pairs_by_difficulty.keys())
-    n_groups = len(difficulties)
-    n_algorithms = len(algorithms)
-    width = 0.8 / n_algorithms
-    
-    # Calculate indices for each difficulty group
-    indices = np.arange(len(difficulties))
-    
-    # Create a color map for the algorithms
-    colors = plt.cm.viridis(np.linspace(0, 0.9, n_algorithms))
-    
-    # Metrics to visualize
-    metrics = [
-        ('Success Rate', 'success', lambda x: np.mean(x) * 100),  # Convert to percentage
-        ('Avg Nodes Explored', 'nodes_explored', np.mean),
-        ('Avg Path Length', 'path_length', np.mean)
-    ]
-    
-    # Create a subplot for each metric
-    for i, (title, metric, agg_func) in enumerate(metrics):
-        plt.subplot(3, 1, i+1)
-        
-        for j, algo in enumerate(algorithms):
-            # Extract data for this algorithm and metric across difficulties
-            data_by_difficulty = []
-            
-            for diff in difficulties:
-                # Get indices of test pairs for this difficulty
-                diff_indices = []
-                for src, tgt in test_pairs_by_difficulty[diff]:
-                    src_id = data.reverse_mapping[src]
-                    tgt_id = data.reverse_mapping[tgt]
-                    
-                    # Find the index in results
-                    for k, (s, t) in enumerate(zip(results['source'], results['target'])):
-                        if s == src_id and t == tgt_id:
-                            diff_indices.append(k)
-                            break
-                
-                # Get metric values for these indices
-                values = [results[metric][algo][idx] for idx in diff_indices]
-                
-                # For path length, only consider successful paths
-                if metric == 'path_length':
-                    successes = [results['success'][algo][idx] for idx in diff_indices]
-                    values = [v for v, s in zip(values, successes) if s]
-                
-                # Calculate aggregate value
-                agg_value = agg_func(values) if values else 0
-                data_by_difficulty.append(agg_value)
-            
-            # Plot the bars for this algorithm
-            bar_positions = indices + (j - n_algorithms/2 + 0.5) * width
-            bars = plt.bar(bar_positions, data_by_difficulty, width, 
-                        label=algo if i == 0 else "", color=colors[j])
-            
-            # Add value labels above bars
-            for bar, value in zip(bars, data_by_difficulty):
-                height = bar.get_height()
-                plt.text(bar.get_x() + bar.get_width()/2., height + 0.01 * plt.ylim()[1],
-                      f'{value:.1f}', ha='center', va='bottom', fontsize=8)
-        
-        # Add labels and adjust plot
-        plt.title(title)
-        plt.xticks(indices, [d.capitalize() for d in difficulties])
-        plt.grid(axis='y', alpha=0.3)
-        
-        # Add legend to the first subplot only
-        if i == 0:
-            plt.legend(loc='upper right')
-    
-    plt.tight_layout()
-    plt.savefig('plots/performance_by_difficulty_detailed.png')
-    
-    print("Detailed performance visualization saved to 'plots/performance_by_difficulty_detailed.png'")
 
 def analyze_paths(data, algorithms, source_id, target_id, max_steps=100):
     """
@@ -656,7 +506,6 @@ def main():
     print("TESTING IMPROVED TRAVERSERS")
     print("="*50)
     test_improved_traversers(data, device, max_steps=100, num_pairs=5)
-
 
 if __name__ == "__main__":
     main()
