@@ -7,6 +7,7 @@ import random
 from models import EnhancedWikiGraphSAGE
 from traversal import EnhancedWikiTraverser
 from utils import load_graph_data, crawl_main
+from utils.wikibuilder import create_wiki_edge_list
 
 def parse_args():
     """Parse command line arguments"""
@@ -19,7 +20,7 @@ def parse_args():
     parser.add_argument('--feature_dim', type=int, default=64,
                         help='Dimension of node features')
     
-    parser.add_argument('--mode', type=str, choices=['data','train', 'evaluate', 'traverse'],
+    parser.add_argument('--mode', type=str, choices=['data','train', 'evaluate', 'traverse', 'pipeline'],
                         default='traverse', help='Operation mode')
     
     parser.add_argument('--model_path', type=str, default='models/enhanced_model_final.pt',
@@ -58,19 +59,91 @@ def parse_args():
     
     return parser.parse_args()
 
-def run_training(args):
+def build_graph(args):
+    """Build graph from edge file or create a new one if it doesn't exist"""
+    print("Starting data generation...")
+    
+    # Create the data directory if it doesn't exist
+    os.makedirs('data', exist_ok=True)
+    
+    # Check if the edge file exists
+    if not os.path.exists(args.edge_file):
+        print(f"Edge file {args.edge_file} not found. Creating a new graph...")
+        
+        # Create a new edge list
+        edge_file_path = create_wiki_edge_list(
+            output_dir="data",
+            max_nodes=args.max_nodes,
+            use_word2vec=True
+        )
+        
+        print(f"Created edge file at {edge_file_path}")
+        return edge_file_path
+    else:
+        print(f"Using existing edge file at {args.edge_file}")
+        return args.edge_file
+
+def run_training(args, data, device):
     """Run training mode"""
-    from train import main as train_main
+    from train import train_path_predictor
     
     print("Starting training...")
-    train_main()
+    
+    # Load or initialize the model
+    input_dim = data.x.size(1)
+    hidden_dim = 256
+    output_dim = 64
+    
+    model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+    
+    # Train the model
+    model = train_path_predictor(
+        data=data,
+        model=model,
+        device=device,
+        num_epochs=30,
+        batch_size=32,
+        num_train_pairs=500,
+        learning_rate=0.001,
+        weight_decay=0.0001,
+        validation_split=0.2
+    )
+    
+    # Save the final model
+    torch.save(model.state_dict(), "models/enhanced_model_final.pt")
+    print(f"Saved trained model to models/enhanced_model_final.pt")
+    
+    return model
 
-def run_evaluation(args):
+def run_evaluation(args, data, device, model=None):
     """Run evaluation mode"""
-    from evaluate import main as evaluate_main
+    from evaluate import test_improved_traversers
     
     print("Starting evaluation...")
-    evaluate_main()
+    
+    if model is None:
+        # Load model if not provided
+        input_dim = data.x.size(1)
+        hidden_dim = 256
+        output_dim = 64
+        
+        model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+        
+        if os.path.exists(args.model_path):
+            model.load_state_dict(torch.load(args.model_path, map_location=device))
+            print(f"Loaded model from {args.model_path}")
+        else:
+            print(f"Warning: Model file {args.model_path} not found. Using untrained model.")
+    
+    # Run evaluation
+    results, summary = test_improved_traversers(
+        data=data,
+        device=device,
+        max_steps=args.max_steps,
+        num_pairs=10
+    )
+    
+    return results, summary
 
 def run_traversal(args, data, device):
     """Run traversal mode"""
@@ -192,7 +265,7 @@ def run_traversal(args, data, device):
     
     # Visualize if requested
     if args.visualize:
-        from utils import visualize_path, compare_paths_visualization
+        from utils.visualization import visualize_path, compare_paths_visualization
         
         os.makedirs('plots', exist_ok=True)
         
@@ -206,9 +279,34 @@ def run_traversal(args, data, device):
         
         print("\nVisualizations saved to 'plots/' directory")
 
-def build_graph(data, edge_file, max_nodes):
-    """Build graph from edge file"""
-    crawl_main(edge_file, max_nodes=max_nodes)
+def run_pipeline(args, device):
+    """Run the full pipeline: data generation, training, and evaluation"""
+    print("Starting full pipeline: data generation, training, and evaluation")
+    
+    # Step 1: Generate data
+    edge_file = build_graph(args)
+    
+    # Step 2: Load graph data
+    data = load_graph_data(
+        edge_file, 
+        feature_dim=args.feature_dim, 
+        max_nodes=args.max_nodes, 
+        ensure_connected=True,
+        use_word2vec=True
+    )
+    print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
+    
+    # Step 3: Train the model
+    model = run_training(args, data, device)
+    
+    # Step 4: Evaluate the model
+    results, summary = run_evaluation(args, data, device, model)
+    
+    # Step 5: Run a sample traversal
+    run_traversal(args, data, device)
+    
+    print("\nPipeline complete! Model trained and evaluated successfully.")
+    return model, results, summary
 
 def main():
     """Main function"""
@@ -229,19 +327,43 @@ def main():
     os.makedirs('plots', exist_ok=True)
     
     # Mode-specific operations
-    if args._get_args == 'data':
-        build_graph(args.edge_file, args.max_nodes)
+    if args.mode == 'data':
+        edge_file = build_graph(args)
+        print(f"Data generation complete. Edge file created at {edge_file}")
+    elif args.mode == 'pipeline':
+        run_pipeline(args, device)
     elif args.mode == 'train':
-        run_training(args)
+        # Load graph data
+        data = load_graph_data(
+            args.edge_file, 
+            feature_dim=args.feature_dim, 
+            max_nodes=args.max_nodes, 
+            ensure_connected=True,
+            use_word2vec=True
+        )
+        print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
+        
+        run_training(args, data, device)
     elif args.mode == 'evaluate':
-        run_evaluation(args)
+        # Load graph data
+        data = load_graph_data(
+            args.edge_file, 
+            feature_dim=args.feature_dim, 
+            max_nodes=args.max_nodes, 
+            ensure_connected=True,
+            use_word2vec=True
+        )
+        print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
+        
+        run_evaluation(args, data, device)
     else:  # traverse mode
         # Load graph data
         data = load_graph_data(
             args.edge_file, 
             feature_dim=args.feature_dim, 
             max_nodes=args.max_nodes, 
-            ensure_connected=True
+            ensure_connected=True,
+            use_word2vec=True
         )
         print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
         
