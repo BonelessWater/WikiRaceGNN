@@ -123,7 +123,7 @@ class EnhancedWikiGraphSAGE(torch.nn.Module):
         # Attention mechanism for node scoring
         if use_attention:
             self.attention = torch.nn.Sequential(
-                torch.nn.Linear(hidden_dim, hidden_dim // 2),
+                torch.nn.Linear(hidden_dim * 2, hidden_dim // 2),  # Input is 2x hidden_dim because we concatenate embeddings
                 torch.nn.ReLU(),
                 torch.nn.Linear(hidden_dim // 2, 1)
             )
@@ -197,11 +197,18 @@ class EnhancedWikiGraphSAGE(torch.nn.Module):
         similarities = F.cosine_similarity(sub_h, target_emb.unsqueeze(0), dim=1)
         
         if self.use_attention:
-            # Calculate attention scores
-            attention_input = torch.cat([
-                sub_h,
-                target_emb.expand(sub_h.size(0), -1)
-            ], dim=1)
+            # Calculate attention scores - fix the dimension issue
+            # First, ensure target_emb is properly expanded
+            expanded_target = target_emb.expand(sub_h.size(0), -1)
+            
+            # Debug: Print shapes
+            # print(f"sub_h shape: {sub_h.shape}, target_emb shape: {target_emb.shape}, expanded: {expanded_target.shape}")
+            
+            # Concatenate along the feature dimension (dim=1)
+            attention_input = torch.cat([sub_h, expanded_target], dim=1)
+            
+            # Make sure attention layers match the input size
+            # The first layer of self.attention expects input of size [batch, sub_h.size(1) + target_emb.size(0)]
             attention_scores = self.attention(attention_input).squeeze(-1)
             
             # Combine similarity with attention

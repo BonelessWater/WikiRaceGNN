@@ -101,9 +101,9 @@ def run_training(args, data, device):
         data=data,
         model=model,
         device=device,
-        num_epochs=30,
+        num_epochs=10,
         batch_size=32,
-        num_train_pairs=500,
+        num_train_pairs=1000,
         learning_rate=0.001,
         weight_decay=0.0001,
         validation_split=0.2
@@ -127,7 +127,7 @@ def run_evaluation(args, data, device, model=None):
         hidden_dim = 256
         output_dim = 64
         
-        model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=5)
+        model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
         
         if os.path.exists(args.model_path):
             model.load_state_dict(torch.load(args.model_path, map_location=device))

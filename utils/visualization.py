@@ -169,10 +169,143 @@ def visualize_path(data, path, algorithm_name="Algorithm"):
     
     print(f"Path visualization saved to 'path_{algorithm_name.lower().replace(' ', '_')}.png'")
 
+def visualize_model_radar_chart(summary, algorithm_names):
+    """
+    Create a radar chart to compare models across multiple metrics.
+    
+    Args:
+        summary: Dictionary with summary statistics from compare_algorithms
+        algorithm_names: List of algorithm names to include
+    """
+    # Select metrics to include in the radar chart
+    metrics = [
+        ('Success Rate', 'success_rate', lambda x: x * 100),
+        ('Path Optimality', 'avg_path_optimality', lambda x: x * 100),
+        ('Efficiency', 'efficiency_ratio', lambda x: x * 50),  # Normalize to similar scale
+        ('Speed', 'avg_time', lambda x: 100 / (x + 0.01))  # Invert time (lower is better)
+    ]
+    
+    # Number of metrics
+    N = len(metrics)
+    
+    # Create radar chart
+    plt.figure(figsize=(10, 10))
+    ax = plt.subplot(111, polar=True)
+    
+    # Set the angle for each metric (evenly spaced)
+    angles = [n / float(N) * 2 * np.pi for n in range(N)]
+    angles += angles[:1]  # Close the loop
+    
+    # Set the labels for each metric
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels([m[0] for m in metrics])
+    
+    # Add grid lines and set y-axis limits
+    ax.set_rlabel_position(0)
+    plt.yticks([20, 40, 60, 80, 100], ["20", "40", "60", "80", "100"], color="grey", size=7)
+    plt.ylim(0, 100)
+    
+    # Plot each algorithm
+    for i, name in enumerate(algorithm_names):
+        # Extract values for each metric
+        values = []
+        for _, metric_key, normalizer in metrics:
+            if metric_key in summary and name in summary[metric_key]:
+                value = normalizer(summary[metric_key][name])
+                values.append(min(value, 100))  # Cap at 100 for visualization
+            else:
+                values.append(0)
+        
+        # Close the loop
+        values += values[:1]
+        
+        # Plot the algorithm
+        ax.plot(angles, values, linewidth=2, linestyle='solid', label=name)
+        ax.fill(angles, values, alpha=0.1)
+    
+    # Add legend
+    plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+    
+    plt.title("Algorithm Performance Comparison", size=15, y=1.1)
+    plt.savefig('plots/radar_chart_comparison.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print("Radar chart saved to 'plots/radar_chart_comparison.png'")
+
+def visualize_performance_heatmap(results, algorithm_names):
+    """
+    Create a heatmap showing the performance of different algorithms across all test cases.
+    
+    Args:
+        results: Results dictionary from compare_algorithms
+        algorithm_names: List of algorithm names to include
+    """
+    # Create figure
+    plt.figure(figsize=(12, 10))
+    
+    # Create a composite score for each test case and algorithm
+    num_test_cases = len(results['source'])
+    score_matrix = np.zeros((len(algorithm_names), num_test_cases))
+    
+    # Formula: Score = success * (1 + (optimal_length / path_length) - (nodes_explored / max_nodes_explored))
+    # This rewards success, path optimality, and exploration efficiency
+    
+    for i, algo in enumerate(algorithm_names):
+        for j in range(num_test_cases):
+            # Base score for success
+            success = results['success'][algo][j]
+            
+            if success:
+                # Path optimality component (optimal_length / actual_length)
+                path_length = results['path_length'][algo][j]
+                optimal_length = results['optimal_path_length'][j] if 'optimal_path_length' in results else path_length
+                path_ratio = optimal_length / path_length if path_length > 0 else 0
+                
+                # Exploration efficiency component
+                nodes_explored = results['nodes_explored'][algo][j]
+                max_nodes = max([results['nodes_explored'][name][j] for name in algorithm_names])
+                explore_ratio = nodes_explored / max_nodes if max_nodes > 0 else 1
+                
+                # Composite score
+                score_matrix[i, j] = success * (1 + path_ratio - explore_ratio)
+            else:
+                score_matrix[i, j] = 0
+    
+    # Create heatmap
+    ax = plt.gca()
+    im = ax.imshow(score_matrix, cmap='YlGn')
+    
+    # Add colorbar
+    cbar = plt.colorbar(im)
+    cbar.set_label('Performance Score')
+    
+    # Set labels
+    ax.set_yticks(np.arange(len(algorithm_names)))
+    ax.set_yticklabels(algorithm_names)
+    ax.set_xticks(np.arange(num_test_cases))
+    ax.set_xticklabels([f'Test {i+1}' for i in range(num_test_cases)])
+    
+    # Rotate x labels for better readability
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    # Add grid
+    ax.set_xticks(np.arange(-.5, num_test_cases, 1), minor=True)
+    ax.set_yticks(np.arange(-.5, len(algorithm_names), 1), minor=True)
+    ax.grid(which='minor', color='black', linestyle='-', linewidth=1, alpha=0.1)
+    
+    # Add title and labels
+    plt.title("Algorithm Performance Across Test Cases")
+    plt.tight_layout()
+    
+    # Save the figure
+    plt.savefig('plots/performance_heatmap.png', dpi=150)
+    plt.close()
+    
+    print("Performance heatmap saved to 'plots/performance_heatmap.png'")
 
 def compare_paths_visualization(data, paths_dict, title="Path Comparison"):
     """
-    Visualize multiple paths from different algorithms.
+    Visualize multiple paths from different algorithms with improved legend.
     
     Args:
         data: Graph data object
@@ -220,7 +353,7 @@ def compare_paths_visualization(data, paths_dict, title="Path Comparison"):
             G.add_edge(source, target)
     
     # Create plot
-    plt.figure(figsize=(14, 12))
+    plt.figure(figsize=(14, 14))  # Square figure for better readability
     pos = nx.spring_layout(G, seed=42)
     
     # Draw background edges
@@ -243,7 +376,7 @@ def compare_paths_visualization(data, paths_dict, title="Path Comparison"):
         # Draw path edges
         path_edges = [(path[j], path[j+1]) for j in range(len(path)-1)]
         nx.draw_networkx_edges(G, pos, edgelist=path_edges, width=2+i, 
-                              edge_color=colors[i], arrows=True, 
+                              edge_color=[colors[i]], arrows=True, 
                               label=f"{name} (length: {len(path)})")
         
         # Draw path nodes with color indicating position
@@ -265,16 +398,23 @@ def compare_paths_visualization(data, paths_dict, title="Path Comparison"):
     labels = {node: str(node) for node in all_path_nodes}
     nx.draw_networkx_labels(G, pos, labels=labels, font_weight='bold')
     
+    # Create a color legend
+    custom_lines = [plt.Line2D([0], [0], color=colors[i], lw=4) for i in range(len(processed_paths))]
+    plt.legend(custom_lines, [f"{name} (length: {len(path)})" for name, path in processed_paths.items()],
+               loc='upper right', title="Algorithm Paths")
+    
+    # Add a smaller legend for node types
+    plt.figtext(0.02, 0.02, "Node Types:", fontweight='bold')
+    plt.figtext(0.02, 0.01, "■ Start (Green)  ■ End (Purple)  ○ Path Node (Yellow→Red)  ○ Other Node (Gray)",
+               bbox=dict(facecolor='white', alpha=0.8))
+    
     plt.title(title)
-    plt.legend(loc='upper right')
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig(f'plots/path_comparison.png')
+    plt.savefig(f'plots/path_comparison.png', dpi=300, bbox_inches='tight')
     plt.close()
     
     print("Path comparison visualization saved to 'path_comparison.png'")
-
-
 def visualize_node_exploration(data, algorithm_explorations, max_nodes=100):
     """
     Visualize which nodes different algorithms explored.
@@ -511,3 +651,178 @@ def visualize_performance_by_difficulty(difficulty_stats, algorithm_names):
     plt.close()
     
     print("Performance by difficulty visualization saved to 'performance_by_difficulty.png'")
+
+def visualize_comparison(results, summary):
+    """
+    Visualize comparison results for different algorithms with enhanced plots.
+    
+    Args:
+        results: Results dictionary from compare_algorithms
+        summary: Summary dictionary from compare_algorithms
+    """
+    # Get algorithm names
+    algo_names = list(summary['avg_path_length'].keys())
+    
+    # Create a figure
+    plt.figure(figsize=(20, 25))  # Increased height for more plots
+    
+    # Plot 1: Average path length
+    plt.subplot(5, 2, 1)
+    bars = plt.bar(algo_names, [summary['avg_path_length'][name] for name in algo_names])
+    plt.title('Average Path Length (Successful Paths)')
+    plt.ylabel('Number of nodes')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    # Add value labels
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                 f'{height:.2f}', ha='center', va='bottom')
+    
+    # Plot 2: Average nodes explored
+    plt.subplot(5, 2, 2)
+    bars = plt.bar(algo_names, [summary['avg_nodes_explored'][name] for name in algo_names])
+    plt.title('Average Nodes Explored')
+    plt.ylabel('Number of nodes')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    # Add value labels
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                 f'{height:.2f}', ha='center', va='bottom')
+    
+    # Plot 3: Success rate
+    plt.subplot(5, 2, 3)
+    bars = plt.bar(algo_names, [summary['success_rate'][name] for name in algo_names])
+    plt.title('Success Rate')
+    plt.ylabel('Rate')
+    plt.ylim(0, 1.1)
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    # Add value labels
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.02,
+                 f'{height:.2f}', ha='center', va='bottom')
+    
+    # Plot 4: Average time
+    plt.subplot(5, 2, 4)
+    bars = plt.bar(algo_names, [summary['avg_time'][name] for name in algo_names])
+    plt.title('Average Execution Time')
+    plt.ylabel('Time (seconds)')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    # Add value labels
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.005,
+                 f'{height:.4f}', ha='center', va='bottom')
+    
+    # Plot 5: Efficiency ratio
+    if 'efficiency_ratio' in summary and summary['efficiency_ratio']:
+        plt.subplot(5, 2, 5)
+        ratio_names = list(summary['efficiency_ratio'].keys())
+        bars = plt.bar(ratio_names, [summary['efficiency_ratio'][name] for name in ratio_names])
+        plt.title('Efficiency Ratio (Baseline Nodes / Algorithm Nodes)')
+        plt.ylabel('Ratio')
+        plt.grid(axis='y', alpha=0.3)
+        plt.xticks(rotation=45, ha='right')
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 0.05,
+                     f'{height:.2f}', ha='center', va='bottom')
+    
+    # Plot 6: Path optimality (if available)
+    if 'optimal_rate' in summary:
+        plt.subplot(5, 2, 6)
+        opt_rates = [summary['optimal_rate'].get(name, 0) for name in algo_names]
+        bars = plt.bar(algo_names, opt_rates)
+        plt.title('Optimal Path Rate')
+        plt.ylabel('Rate')
+        plt.ylim(0, 1.1)
+        plt.grid(axis='y', alpha=0.3)
+        plt.xticks(rotation=45, ha='right')
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 0.02,
+                     f'{height:.2f}', ha='center', va='bottom')
+    
+    # Plot 7: Path length distribution
+    plt.subplot(5, 2, 7)
+    # Create box plots for path lengths
+    path_lengths_data = [results['path_length'][name] for name in algo_names]
+    plt.boxplot(path_lengths_data, labels=algo_names)
+    plt.title('Path Length Distribution')
+    plt.ylabel('Path Length')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    
+    # Plot 8: Nodes explored distribution
+    plt.subplot(5, 2, 8)
+    # Create box plots for nodes explored
+    nodes_explored_data = [results['nodes_explored'][name] for name in algo_names]
+    plt.boxplot(nodes_explored_data, labels=algo_names)
+    plt.title('Nodes Explored Distribution')
+    plt.ylabel('Nodes Explored')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    
+    # Plot 9: Success rate by test case
+    plt.subplot(5, 2, 9)
+    indices = range(len(results['source']))
+    width = 0.8 / len(algo_names)
+    
+    for i, name in enumerate(algo_names):
+        positions = [idx + (i - len(algo_names)/2 + 0.5) * width for idx in indices]
+        plt.bar(positions, results['success'][name], width, label=name)
+    
+    plt.xlabel('Test Case')
+    plt.ylabel('Success (0/1)')
+    plt.title('Success by Test Case')
+    plt.legend(loc='upper right', fontsize='small')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(range(len(indices)), [f'{i+1}' for i in indices], rotation=45)
+    
+    # Plot 10: Detailed comparison of nodes explored
+    plt.subplot(5, 2, 10)
+    indices = range(len(results['source']))
+    width = 0.8 / len(algo_names)
+    
+    for i, name in enumerate(algo_names):
+        positions = [idx + (i - len(algo_names)/2 + 0.5) * width for idx in indices]
+        plt.bar(positions, results['nodes_explored'][name], width, label=name)
+    
+    plt.xlabel('Test Case')
+    plt.ylabel('Nodes Explored')
+    plt.title('Nodes Explored per Test Case')
+    plt.legend(loc='upper right', fontsize='small')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(range(len(indices)), [f'{i+1}' for i in indices], rotation=45)
+    
+    plt.tight_layout()
+    plt.savefig('plots/algorithm_comparison.png', dpi=150)
+    plt.close()
+    
+    # Create a second figure for detailed path lengths
+    plt.figure(figsize=(15, 6))
+    for i, name in enumerate(algo_names):
+        positions = [idx + (i - len(algo_names)/2 + 0.5) * width for idx in indices]
+        plt.bar(positions, results['path_length'][name], width, label=name)
+    
+    plt.xlabel('Test Case')
+    plt.ylabel('Path Length')
+    plt.title('Path Length per Test Case')
+    plt.legend(loc='upper right')
+    plt.grid(axis='y', alpha=0.3)
+    plt.xticks(range(len(indices)), [f'{i+1}' for i in indices], rotation=45)
+    
+    plt.tight_layout()
+    plt.savefig('plots/path_length_comparison.png')
+    
+    print("Visualizations saved to 'algorithm_comparison.png' and 'path_length_comparison.png'")
+    
+    # Return the summary for convenience
+    return summary

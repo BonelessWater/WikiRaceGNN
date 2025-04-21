@@ -12,7 +12,10 @@ from utils.visualization import (
     visualize_node_exploration,
     visualize_path_distances,
     visualize_performance_by_difficulty,
-    visualize_results_by_difficulty
+    visualize_results_by_difficulty,
+    visualize_comparison,
+    visualize_performance_heatmap,
+    visualize_model_radar_chart,
 )
 from utils.evaluation import (
     compare_algorithms,
@@ -40,4 +43,6 @@ __all__ = [
     'generate_test_pairs',
     'initialize_word2vec_model',
     'crawl_main',
+    'visualize_performance_heatmap',
+    'visualize_model_radar_chart',
 ]

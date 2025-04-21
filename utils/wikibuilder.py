@@ -92,12 +92,7 @@ class WikiGraphBuilder:
     def fetch_links(self, page_title):
         """
         Fetch outgoing links from a Wikipedia page using the Wikipedia API.
-        
-        Args:
-            page_title: Title of the Wikipedia page
-            
-        Returns:
-            list: List of linked page titles
+        Retrieve all links but randomly select 5 to reduce density.
         """
         self.rate_limit_request()
         url = "https://en.wikipedia.org/w/api.php"
@@ -110,10 +105,10 @@ class WikiGraphBuilder:
             "format": "json",
             "titles": page_title,
             "prop": "links",
-            "pllimit": "10"  # Get up to 10 links per request
+            "pllimit": "500"  # Request a higher number of links
         }
         
-        links = []
+        all_links = []
         continue_params = {}
         
         try:
@@ -134,21 +129,28 @@ class WikiGraphBuilder:
                         if "links" in page_data:
                             for link in page_data["links"]:
                                 # Filter out non-main namespace links
-                                if ":" not in link["title"]:
-                                    links.append(link["title"])
+                                if ":" not in link["title"] and link["title"] not in self.visited:
+                                    all_links.append(link["title"])
                 
                 # Check if we need to continue
                 if "continue" in data and "plcontinue" in data["continue"]:
                     continue_params = {"plcontinue": data["continue"]["plcontinue"]}
                 else:
                     break
-                    
-            return links
             
+            # Randomly select 5 links if we have more than 5
+            import random
+            if len(all_links) > 5:
+                selected_links = random.sample(all_links, 5)
+            else:
+                selected_links = all_links
+                
+            return selected_links
+                
         except Exception as e:
             print(f"Error fetching links for {page_title}: {e}")
             return []
-    
+        
     def preprocess_title(self, title):
         """
         Preprocess a page title for Word2Vec.
@@ -164,7 +166,7 @@ class WikiGraphBuilder:
         
         # Tokenize
         return simple_preprocess(title, deacc=True)  # deacc=True removes accents
-    
+        
     def train_word2vec_model(self):
         """
         Train a Word2Vec model on the page titles.
@@ -233,14 +235,7 @@ class WikiGraphBuilder:
     
     def process_page_batch(self, batch):
         """
-        Process a batch of pages in parallel.
-        
-        Args:
-            batch: List of page titles to process
-            
-        Returns:
-            tuple: (edges, metadata) where edges is a list of (source, target) tuples
-                  and metadata is a dict of page metadata
+        Process a batch of pages, with controls to limit density.
         """
         results = []
         
@@ -260,6 +255,9 @@ class WikiGraphBuilder:
         batch_edges = []
         batch_metadata = {}
         
+        # Track connections per node to limit density
+        connections_per_node = {}
+        
         for source_page, target_pages in results:
             # Skip if no outgoing links
             if not target_pages:
@@ -273,36 +271,40 @@ class WikiGraphBuilder:
                 if source_page not in self.page_titles:
                     self.page_titles.append(source_page)
                 
-                # We'll update embeddings after Word2Vec training
                 batch_metadata[source_page] = {
                     "title": source_page,
                     "url": source_url,
                     "embedding": None  # Placeholder, will be updated later
                 }
             
+            # Initialize connection counter for source if not exists
+            if source_page not in connections_per_node:
+                connections_per_node[source_page] = 0
+                
+            # Limit connections per source node
+            max_connections = 5  # Maximum outgoing connections per node
+            
             # Process target pages
             for target_page in target_pages:
-                # Skip self-loops
-                if target_page == source_page:
-                    continue
+                # Skip self-loops and limit connections
+                if target_page != source_page and connections_per_node[source_page] < max_connections:
+                    # Add edge
+                    batch_edges.append((source_page, target_page))
+                    connections_per_node[source_page] = connections_per_node.get(source_page, 0) + 1
                     
-                # Add edge
-                batch_edges.append((source_page, target_page))
-                
-                # Add target page metadata if not already present
-                if target_page not in self.node_metadata and target_page not in batch_metadata:
-                    target_url = f"https://en.wikipedia.org/wiki/{target_page.replace(' ', '_')}"
-                    
-                    # Track page title for Word2Vec training
-                    if target_page not in self.page_titles:
-                        self.page_titles.append(target_page)
-                    
-                    # Placeholder embedding
-                    batch_metadata[target_page] = {
-                        "title": target_page,
-                        "url": target_url,
-                        "embedding": None  # Placeholder, will be updated later
-                    }
+                    # Add target page metadata if not already present
+                    if target_page not in self.node_metadata and target_page not in batch_metadata:
+                        target_url = f"https://en.wikipedia.org/wiki/{target_page.replace(' ', '_')}"
+                        
+                        # Track page title for Word2Vec training
+                        if target_page not in self.page_titles:
+                            self.page_titles.append(target_page)
+                        
+                        batch_metadata[target_page] = {
+                            "title": target_page,
+                            "url": target_url,
+                            "embedding": None  # Placeholder, will be updated later
+                        }
         
         return batch_edges, batch_metadata
     
@@ -363,7 +365,7 @@ class WikiGraphBuilder:
             print(f"Saved Word2Vec model to {model_file}")
     
     def build_graph(self):
-        """Build the Wikipedia graph."""
+        """Build the Wikipedia graph with bidirectional edges."""
         print(f"Starting graph construction with {len(self.seed_pages)} seed pages")
         
         # Initialize with seed pages
@@ -404,15 +406,16 @@ class WikiGraphBuilder:
                 
                 # Update progress bar
                 pbar.update(new_pages)
-                
-                # Save intermediate results every 1000 nodes
-                if len(self.visited) % 1000 == 0 or len(self.visited) >= self.max_nodes:
-                    if self.use_word2vec and GENSIM_AVAILABLE and len(self.visited) >= self.max_nodes:
-                        # Train Word2Vec model and update embeddings before final save
-                        self.train_word2vec_model()
-                        self.update_embeddings()
-                    
-                    self.save_progress()
+        
+        # Make edges bidirectional
+        print("Ensuring edges are bidirectional...")
+        bidirectional_edges = set()
+        for source, target in self.edges:
+            bidirectional_edges.add((source, target))
+            bidirectional_edges.add((target, source))  # Add the reverse edge
+        
+        # Convert back to list
+        self.edges = list(bidirectional_edges)
         
         # Train Word2Vec model and update embeddings
         if self.use_word2vec and GENSIM_AVAILABLE:
@@ -438,31 +441,27 @@ class WikiGraphBuilder:
         with open(adj_list_file, 'w', encoding='utf-8') as f:
             json.dump(adj_list, f, ensure_ascii=False, indent=2)
         
-        # Try to convert to PyTorch Geometric format
-        try:
-            self.convert_to_pytorch_geometric()
-            print("Successfully converted to PyTorch Geometric format")
-        except Exception as e:
-            print(f"Could not convert to PyTorch Geometric format: {e}")
-            print("You can still use the CSV and JSON files directly")
-        
         print(f"Graph construction complete! Created graph with {len(self.node_metadata)} nodes and {len(self.edges)} edges")
         return self.edges, self.node_metadata
     
     def convert_to_pytorch_geometric(self):
-        """Convert the graph to PyTorch Geometric format."""
+        """Convert the graph to PyTorch Geometric format with bidirectional edges."""
         try:
             import torch
             from torch_geometric.data import Data
+            from torch_geometric.utils import to_undirected
             
             # Create node mapping
             node_mapping = {node: i for i, node in enumerate(self.node_metadata.keys())}
             
             # Create edge index tensor
             edge_index = torch.tensor([[node_mapping[source], node_mapping[target]] 
-                                      for source, target in self.edges 
-                                      if source in node_mapping and target in node_mapping], 
-                                     dtype=torch.long).t()
+                                    for source, target in self.edges 
+                                    if source in node_mapping and target in node_mapping], 
+                                    dtype=torch.long).t()
+            
+            # Ensure edges are undirected/bidirectional
+            edge_index = to_undirected(edge_index)
             
             # Create node features tensor
             x = torch.tensor([self.node_metadata[node]['embedding'] for node in node_mapping.keys()], 
@@ -497,7 +496,6 @@ class WikiGraphBuilder:
         except Exception as e:
             print(f"Error converting to PyTorch Geometric format: {e}")
             return None
-
 
 def create_wiki_edge_list(output_dir="data", max_nodes=5000, use_word2vec=True):
     """

@@ -16,6 +16,8 @@ from utils import (
     compare_paths_visualization,
     visualize_results_by_difficulty,
     generate_test_pairs,
+    visualize_model_radar_chart,
+    visualize_performance_heatmap
 )
 
 def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
@@ -29,8 +31,8 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     hidden_dim = 256
     output_dim = 64
     
-    standard_model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=5)
-    enhanced_model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=5)
+    standard_model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+    enhanced_model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
     
     # Load trained models if available
     if os.path.exists("models/standard_model_final.pt"):
@@ -463,13 +465,13 @@ def main():
     # Generate test pairs with varied path lengths
     all_test_pairs, test_pairs_by_difficulty = generate_test_pairs(data, num_pairs=30)
     
-    # Run comparison
+    # In evaluate.py, after running compare_algorithms
     results, summary = compare_algorithms(data, algorithms, all_test_pairs, max_steps=100)
-    
+
     # Print summary results
     print("\nEvaluation complete. Summary results:")
     print("-" * 60)
-    
+
     for name in algorithms:
         print(f"{name}:")
         print(f"  Success Rate: {summary['success_rate'][name]:.2%}")
@@ -479,18 +481,18 @@ def main():
         print(f"  Optimal Path Rate: {summary['optimal_rate'][name]:.2%}")
         print(f"  Avg Path Optimality: {summary['avg_path_optimality'][name]:.2%}")
         print()
-    
-    # Visualize results
+
+    # Create standard visualizations
     visualize_comparison(results, summary)
-    
-    # Analyze by path difficulty
     difficulty_stats = analyze_by_path_difficulty(results, summary)
-    
-    # Additional visualizations
     visualize_path_distances(results['path_length'], list(algorithms.keys()))
     visualize_performance_by_difficulty(difficulty_stats, list(algorithms.keys()))
+
+    # Add new visualizations
+    visualize_model_radar_chart(summary, list(algorithms.keys()))
+    visualize_performance_heatmap(results, list(algorithms.keys()))
     visualize_results_by_difficulty(results, test_pairs_by_difficulty, list(algorithms.keys()), data)
-    
+        
     # Analyze specific cases - look at some challenging paths
     if test_pairs_by_difficulty['long']:
         # Analyze a long path
