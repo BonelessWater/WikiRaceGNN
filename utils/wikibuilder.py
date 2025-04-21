@@ -110,7 +110,7 @@ class WikiGraphBuilder:
             "format": "json",
             "titles": page_title,
             "prop": "links",
-            "pllimit": "25"  # Get up to 25 links per request
+            "pllimit": "10"  # Get up to 10 links per request
         }
         
         links = []
@@ -557,5 +557,4 @@ if __name__ == "__main__":
     )
     
     print(f"Edge list created at: {edge_list_path}")
-    print("You can now use this edge list with WikiRaceGNN:")
-    print(f"poetry run python main.py --edge_file {edge_list_path} --mode traverse --visualize")
+

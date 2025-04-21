@@ -29,8 +29,8 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     hidden_dim = 256
     output_dim = 64
     
-    standard_model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
-    enhanced_model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+    standard_model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=5)
+    enhanced_model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=5)
     
     # Load trained models if available
     if os.path.exists("models/standard_model_final.pt"):
@@ -49,24 +49,30 @@ def test_improved_traversers(data, device, max_steps=100, num_pairs=10):
     enhanced_model.eval()
 
     # Create traversers
-    from traversal.enhanced import ImprovedGraphTraverser, EnhancedBidirectionalTraverser
-    improved_standard = ImprovedGraphTraverser(standard_model, data, device, beam_width=20)
-    improved_enhanced = ImprovedGraphTraverser(enhanced_model, data, device, beam_width=10)
+    from traversal.enhanced import (
+        ImprovedGraphTraverser, 
+        EnhancedBidirectionalTraverser, 
+        OptimizedImprovedGraphTraverser,
+        EnhancedBidirectionalTraverser,
+    )
+    improvedStandard = ImprovedGraphTraverser(standard_model, data, device, beam_width=5)
+    optimizedImprovedStandard = OptimizedImprovedGraphTraverser(standard_model, data, device)
+    standardGNN = EnhancedGNNTraverser(standard_model, data, device)
+    enhancedGNN = EnhancedGNNTraverser(enhanced_model, data, device)
+
+    standardBidirectional = EnhancedBidirectionalTraverser(standard_model, data, device, beam_width=5)
+    enhancedBidirectional = EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=5)
     
-    # Get baseline traversers
-    baseline_standard = SmartGraphTraverser(standard_model, data, device)
-    baseline_enhanced = EnhancedGNNTraverser(enhanced_model, data, device)
     
     # Define algorithms to compare
     algorithms = {
         "BidirectionalBFS": lambda s, t, max_steps: bidirectional_bfs_wrapper(data, s, t, max_steps),
-        "SmartGraph": lambda s, t, max_steps: baseline_standard.traverse(s, t, max_steps),
-        "Improved_20": lambda s, t, max_steps: improved_standard.traverse(s, t, max_steps),
-        "Improved_10": lambda s, t, max_steps: improved_enhanced.traverse(s, t, max_steps),
-        "EnhancedGNN": lambda s, t, max_steps: baseline_enhanced.traverse(s, t, max_steps),
-        "EnhancedBidirectional_3": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=3).traverse(s, t, max_steps),
-        "EnhancedBidirectional_5": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=5).traverse(s, t, max_steps),
-        "EnhancedBidirectional_10": lambda s, t, max_steps: EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=10).traverse(s, t, max_steps),
+        "ImprovedStandard": lambda s, t, max_steps: improvedStandard.traverse(s, t, max_steps),
+        "OptimizedImprovedStandard": lambda s, t, max_steps: optimizedImprovedStandard.traverse(s, t, max_steps),
+        "StandardGNN": lambda s, t, max_steps: standardGNN.traverse(s, t, max_steps),
+        "EnhancedGNN": lambda s, t, max_steps: enhancedGNN.traverse(s, t, max_steps),
+        "StandardBidirectional": lambda s, t, max_steps: standardBidirectional.traverse(s, t, max_steps),
+        "EnhancedBidirectional": lambda s, t, max_steps: enhancedBidirectional.traverse(s, t, max_steps),
     } 
     
     # Generate test pairs

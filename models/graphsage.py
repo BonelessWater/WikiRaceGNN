@@ -79,71 +79,156 @@ class WikiGraphSAGE(torch.nn.Module):
         logits = self.scorer(feats).squeeze(1)       # [M]
         return logits
 
-class EnhancedWikiGraphSAGE(WikiGraphSAGE):
+class EnhancedWikiGraphSAGE(torch.nn.Module):
     """
-    Enhanced version of WikiGraphSAGE with Word2Vec integration.
+    Enhanced GraphSAGE with multi-scale representations and attention mechanisms
+    for more effective path planning.
     """
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=4, dropout=0.2, word2vec_model=None):
-        super().__init__(input_dim, hidden_dim, output_dim, num_layers, dropout, word2vec_model)
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=4, dropout=0.2,
+                 use_attention=True, use_layer_norm=True, use_skip=True, word2vec_model=None):
+        super().__init__()
+        from torch_geometric.nn import SAGEConv
         
-        # Additional scoring mechanism for path finding
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.num_layers = num_layers
+        self.dropout = dropout
+        self.use_attention = use_attention
+        self.use_layer_norm = use_layer_norm
+        self.use_skip = use_skip
+        
+        # Store Word2Vec model for additional support
+        self.word2vec_model = word2vec_model
+        
+        # Initial embedding
+        self.embedding = torch.nn.Sequential(
+            torch.nn.Linear(input_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout)
+        )
+        
+        # Layer normalization
+        if use_layer_norm:
+            self.layer_norms = torch.nn.ModuleList([
+                torch.nn.LayerNorm(hidden_dim)
+                for _ in range(num_layers)
+            ])
+        
+        # GraphSAGE convolutions with attention
+        self.convs = torch.nn.ModuleList()
+        for i in range(num_layers):
+            self.convs.append(SAGEConv(hidden_dim, hidden_dim))
+        
+        # Attention mechanism for node scoring
+        if use_attention:
+            self.attention = torch.nn.Sequential(
+                torch.nn.Linear(hidden_dim, hidden_dim // 2),
+                torch.nn.ReLU(),
+                torch.nn.Linear(hidden_dim // 2, 1)
+            )
+        
+        # Path scoring with context awareness
         self.path_scorer = torch.nn.Sequential(
             torch.nn.Linear(3*hidden_dim, hidden_dim),
+            torch.nn.ReLU(), 
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(hidden_dim, hidden_dim // 2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim // 2, 1)
+        )
+        
+        # Multi-scale fusion layer
+        self.multi_scale_fusion = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim * (num_layers + 1), hidden_dim),
             torch.nn.ReLU(),
             torch.nn.Dropout(dropout),
-            torch.nn.Linear(hidden_dim, 1)
-        )
-        
-        # Multi-hop embedding transformation
-        self.multi_hop_transform = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim, hidden_dim)
         )
+        
+        # Output layer
+        self.output = torch.nn.Linear(hidden_dim, output_dim)
     
-    def score_path(self, curr_node_emb, next_node_emb, target_emb):
+    def forward(self, x, edge_index, batch=None):
         """
-        Score a potential path step based on current node, next node, and target.
+        Forward pass with multi-scale fusion and skip connections.
+        """
+        import torch.nn.functional as F
         
-        Args:
-            curr_node_emb: [hidden_dim] embedding of current node
-            next_node_emb: [hidden_dim] embedding of potential next node
-            target_emb: [hidden_dim] embedding of target node
+        # Initial embedding
+        h = self.embedding(x)
+        
+        # Store intermediate representations for multi-scale fusion
+        all_reps = [h]
+        
+        # Apply GraphSAGE convolutions with skip connections
+        for i, conv in enumerate(self.convs):
+            # Apply convolution
+            h_new = conv(h, edge_index)
             
-        Returns:
-            score: Scalar score for the potential path step
-        """
-        combined = torch.cat([
-            curr_node_emb.unsqueeze(0), 
-            next_node_emb.unsqueeze(0), 
-            target_emb.unsqueeze(0)
-        ], dim=1)  # [1, 3*hidden_dim]
+            # Apply layer norm if enabled
+            if self.use_layer_norm:
+                h_new = self.layer_norms[i](h_new)
+            
+            # Apply skip connection if enabled
+            if self.use_skip and i > 0:
+                h_new = h_new + h
+            
+            # Apply activation and dropout
+            h = F.relu(h_new)
+            h = F.dropout(h, p=self.dropout, training=self.training)
+            
+            # Store for multi-scale fusion
+            all_reps.append(h)
         
-        return self.path_scorer(combined).item()
+        # Multi-scale fusion if more than one layer
+        if self.num_layers > 0:
+            # Concatenate representations from different scales
+            multi_scale = torch.cat(all_reps, dim=1)
+            h = self.multi_scale_fusion(multi_scale)
+        
+        return h
+    
+    def score_neighbors(self, sub_h, sub_nodes, target_emb):
+        """
+        Score neighbor nodes with attention mechanism.
+        """
+        # Calculate basic similarity
+        similarities = F.cosine_similarity(sub_h, target_emb.unsqueeze(0), dim=1)
+        
+        if self.use_attention:
+            # Calculate attention scores
+            attention_input = torch.cat([
+                sub_h,
+                target_emb.expand(sub_h.size(0), -1)
+            ], dim=1)
+            attention_scores = self.attention(attention_input).squeeze(-1)
+            
+            # Combine similarity with attention
+            combined_scores = similarities + F.sigmoid(attention_scores)
+            return combined_scores
+        else:
+            return similarities
     
     def predict_multi_hop(self, node_emb, target_emb, num_hops=3):
         """
         Estimate a multi-hop direction vector toward the target.
-        Enhanced with Word2Vec semantic understanding.
-        
-        Args:
-            node_emb: Current node embedding
-            target_emb: Target node embedding
-            num_hops: Number of hops to plan ahead
-            
-        Returns:
-            direction_vector: Predicted direction in embedding space
         """
-        # Transform the embeddings for multi-hop planning
-        node_transformed = self.multi_hop_transform(node_emb)
-        target_transformed = self.multi_hop_transform(target_emb)
+        # Concatenate embeddings for context-aware prediction
+        combined = torch.cat([
+            node_emb,
+            target_emb,
+            torch.abs(target_emb - node_emb)  # Distance features
+        ], dim=1)
         
-        # Compute direction vector (normalized)
-        direction = target_transformed - node_transformed
+        # Predict direction vector
+        direction = self.path_scorer(combined)
+        
+        # Normalize
         direction_norm = torch.norm(direction, p=2)
-        
         if direction_norm > 0:
             return direction / direction_norm
         else:
             return direction
-  
+        
+          

@@ -1,5 +1,5 @@
 from traversal.base import BaseTraverser
-from traversal.enhanced import EnhancedWikiTraverser, SmartGraphTraverser, ImprovedGraphTraverser, Word2VecEnhancedTraverser
+from traversal.enhanced import EnhancedWikiTraverser, SmartGraphTraverser, ImprovedGraphTraverser, Word2VecEnhancedTraverser, OptimizedImprovedGraphTraverser
 from traversal.utils import bidirectional_bfs
 
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     'SmartGraphTraverser',
     'ImprovedGraphTraverser',
     'Word2VecEnhancedTraverser',
+    'OptimizedImprovedGraphTraverser'
 ]

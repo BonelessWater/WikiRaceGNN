@@ -127,7 +127,7 @@ def run_evaluation(args, data, device, model=None):
         hidden_dim = 256
         output_dim = 64
         
-        model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+        model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=5)
         
         if os.path.exists(args.model_path):
             model.load_state_dict(torch.load(args.model_path, map_location=device))

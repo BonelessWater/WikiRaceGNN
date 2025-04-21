@@ -1540,3 +1540,226 @@ class EnhancedBidirectionalTraverser:
             import traceback
             traceback.print_exc()
             return [], 0
+        
+class OptimizedImprovedGraphTraverser:
+    """
+    Highly optimized graph traverser with advanced pruning strategies.
+    """
+    def __init__(self, model, data, device, beam_width=3, heuristic_weight=1.2, 
+                exploration_penalty=0.1, revisit_bonus=0.05, max_expansions=50):
+        self.model = model
+        self.data = data
+        self.device = device
+        self.beam_width = beam_width
+        self.heuristic_weight = heuristic_weight
+        self.exploration_penalty = exploration_penalty
+        self.revisit_bonus = revisit_bonus
+        self.max_expansions = max_expansions
+        self.embedding_cache = {}
+        self.nodes_explored = 0
+        
+        # Ensure model is on the correct device and in eval mode
+        self.model = self.model.to(self.device)
+        self.model.eval()
+        
+    def reset_counter(self):
+        """Reset the counter for nodes explored"""
+        self.nodes_explored = 0
+        
+    def get_node_embedding(self, node_idx):
+        """Get node embedding with caching for efficiency"""
+        if node_idx in self.embedding_cache:
+            return self.embedding_cache[node_idx]
+            
+        with torch.no_grad():
+            # Get node features and put them on the right device
+            node_x = self.data.x[node_idx].unsqueeze(0).to(self.device)
+            
+            # Run the embedding layer for feature extraction
+            embedding = self.model.embedding(node_x)
+            
+            # Cache and return
+            self.embedding_cache[node_idx] = embedding
+            return embedding
+    
+    def get_similarity(self, emb1, emb2):
+        """Calculate cosine similarity between two embeddings"""
+        # Ensure both are on same device
+        if emb1.device != emb2.device:
+            emb2 = emb2.to(emb1.device)
+            
+        # Calculate and return cosine similarity
+        return F.cosine_similarity(emb1, emb2, dim=1).item()
+    
+    def adaptive_beam_search(self, source_idx, target_idx, max_steps=50):
+        """
+        Improved beam search with adaptive expansion and path diversity promotion.
+        """
+        # Reset counter
+        self.reset_counter()
+        
+        # Handle identical nodes
+        if source_idx == target_idx:
+            return [source_idx], 1
+        
+        # Get embeddings
+        source_emb = self.get_node_embedding(source_idx)
+        target_emb = self.get_node_embedding(target_idx)
+        
+        # Initialize beam search
+        # Format: (score, diversity_score, path)
+        visited = {source_idx: 0}  # node -> depth first visited
+        current_beams = [(0.0, 0.0, [source_idx])]
+        
+        # Exploration counter and expansion tracking
+        self.nodes_explored = 1
+        expansions = 0
+        
+        # Track node visit frequency for diversity promotion
+        visit_counts = {source_idx: 1}
+        
+        for step in range(max_steps):
+            if not current_beams or expansions >= self.max_expansions:
+                break
+                
+            # Create next generation of beams
+            next_beams = []
+            
+            # Dynamic beam expansion based on similarity to target
+            for score, diversity_score, path in current_beams:
+                current = path[-1]
+                current_emb = self.get_node_embedding(current)
+                current_to_target_sim = self.get_similarity(current_emb, target_emb)
+                
+                # Check if we've reached the target
+                if current == target_idx:
+                    return path, self.nodes_explored
+                
+                # Get neighbors
+                neighbors = self.data.adj_list.get(current, [])
+                
+                # Sort neighbors by embedding similarity to target for prioritized expansion
+                neighbor_scores = []
+                for neighbor in neighbors:
+                    # Skip already deeply explored paths
+                    if neighbor in visited and visited[neighbor] < len(path) - 2:
+                        continue
+                    
+                    # Get embedding and calculate similarity to target
+                    neighbor_emb = self.get_node_embedding(neighbor)
+                    similarity = self.get_similarity(neighbor_emb, target_emb)
+                    
+                    # Calculate exploration score with penalties/bonuses
+                    # - Penalty for revisiting nodes
+                    # - Bonus for nodes that might have been visited at worse depths
+                    revisit_penalty = 0
+                    if neighbor in visited:
+                        revisit_penalty = self.exploration_penalty
+                        # But if we're revisiting at a better depth, give a bonus
+                        if visited[neighbor] > len(path):
+                            revisit_penalty = -self.revisit_bonus
+                    
+                    # More penalties for frequently visited nodes to promote diversity
+                    frequency_penalty = 0
+                    if neighbor in visit_counts:
+                        frequency_penalty = (visit_counts[neighbor] / (step + 1)) * self.exploration_penalty
+                    
+                    # Combined score
+                    exploration_score = similarity - revisit_penalty - frequency_penalty
+                    
+                    neighbor_scores.append((neighbor, exploration_score))
+                
+                # Sort by score and take top candidates
+                neighbor_scores.sort(key=lambda x: x[1], reverse=True)
+                top_neighbors = neighbor_scores[:min(self.beam_width, len(neighbor_scores))]
+                
+                # Add each candidate to beams
+                for neighbor, _ in top_neighbors:
+                    # Update visit tracking
+                    visit_counts[neighbor] = visit_counts.get(neighbor, 0) + 1
+                    visited[neighbor] = min(visited.get(neighbor, float('inf')), len(path))
+                    
+                    # Create new path
+                    new_path = path + [neighbor]
+                    
+                    # Calculate score components
+                    path_length_penalty = len(new_path) * 0.01
+                    neighbor_emb = self.get_node_embedding(neighbor)
+                    similarity = self.get_similarity(neighbor_emb, target_emb)
+                    
+                    # Path diversity score - measures how different this path is from others
+                    # Higher is better for diversity
+                    diversity = sum(1 for node in new_path if visit_counts.get(node, 0) <= 1)
+                    diversity_score = diversity / len(new_path)
+                    
+                    # Combined score (lower is better)
+                    combined_score = path_length_penalty - similarity
+                    
+                    # Add to candidates - notice we keep diversity as a separate score
+                    next_beams.append((combined_score, diversity_score, new_path))
+                    self.nodes_explored += 1
+                    
+                    # Early success detection
+                    if neighbor == target_idx:
+                        return new_path, self.nodes_explored
+                    
+                # Count this as an expansion
+                expansions += 1
+                if expansions >= self.max_expansions:
+                    break
+            
+            # If no valid expansions, break
+            if not next_beams:
+                break
+                
+            # Select next beams with diversity promotion
+            # Sort first by score, then by diversity as a tiebreaker
+            next_beams.sort(key=lambda x: (x[0], -x[1]))
+            
+            # Take top beams but ensure some diversity
+            diverse_beams = []
+            regular_beams = []
+            
+            for beam in next_beams:
+                if beam[1] > 0.5:  # High diversity score
+                    diverse_beams.append(beam)
+                else:
+                    regular_beams.append(beam)
+            
+            # Ensure at least some proportion of diverse paths in the mix
+            diverse_count = min(self.beam_width // 3, len(diverse_beams))
+            regular_count = self.beam_width - diverse_count
+            
+            current_beams = diverse_beams[:diverse_count] + regular_beams[:regular_count]
+        
+        # Return best path found
+        if current_beams:
+            best_beam = min(current_beams, key=lambda x: x[0])
+            return best_beam[2], self.nodes_explored
+        
+        # No path found
+        return [], self.nodes_explored
+    
+    def traverse(self, source_id, target_id, max_steps=50):
+        """Main traversal method with error handling"""
+        try:
+            # Convert IDs to indices
+            if source_id not in self.data.node_mapping or target_id not in self.data.node_mapping:
+                return [], 0
+                
+            source_idx = self.data.node_mapping[source_id]
+            target_idx = self.data.node_mapping[target_id]
+            
+            # Use adaptive beam search to find path
+            path, nodes_explored = self.adaptive_beam_search(source_idx, target_idx, max_steps)
+            
+            # Convert path indices back to IDs
+            path_ids = [self.data.reverse_mapping[idx] for idx in path]
+            
+            return path_ids, nodes_explored
+            
+        except Exception as e:
+            print(f"Error in traversal: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], 0
