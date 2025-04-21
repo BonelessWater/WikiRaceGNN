@@ -3,9 +3,10 @@ import torch
 import os
 import numpy as np
 import random
+
 from models import EnhancedWikiGraphSAGE
 from traversal import EnhancedWikiTraverser
-from utils import load_graph_data
+from utils import load_graph_data, crawl_main
 
 def parse_args():
     """Parse command line arguments"""
@@ -18,7 +19,7 @@ def parse_args():
     parser.add_argument('--feature_dim', type=int, default=64,
                         help='Dimension of node features')
     
-    parser.add_argument('--mode', type=str, choices=['train', 'evaluate', 'traverse'],
+    parser.add_argument('--mode', type=str, choices=['data','train', 'evaluate', 'traverse'],
                         default='traverse', help='Operation mode')
     
     parser.add_argument('--model_path', type=str, default='models/enhanced_model_final.pt',
@@ -205,6 +206,10 @@ def run_traversal(args, data, device):
         
         print("\nVisualizations saved to 'plots/' directory")
 
+def build_graph(data, edge_file, max_nodes):
+    """Build graph from edge file"""
+    crawl_main(edge_file, max_nodes=max_nodes)
+
 def main():
     """Main function"""
     args = parse_args()
@@ -224,7 +229,9 @@ def main():
     os.makedirs('plots', exist_ok=True)
     
     # Mode-specific operations
-    if args.mode == 'train':
+    if args._get_args == 'data':
+        build_graph(args.edge_file, args.max_nodes)
+    elif args.mode == 'train':
         run_training(args)
     elif args.mode == 'evaluate':
         run_evaluation(args)

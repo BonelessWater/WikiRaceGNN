@@ -7,6 +7,8 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.preprocessing import StandardScaler
 from torch.cuda.amp import autocast, GradScaler
+from gensim.models import Word2Vec
+from gensim.utils import simple_preprocess
 
 from models import WikiGraphSAGE, EnhancedWikiGraphSAGE
 from utils import (
@@ -14,8 +16,10 @@ from utils import (
     neighbor_sampler, 
     plot_graph_sample, 
     visualize_embeddings,
+    initialize_word2vec_model
 )
 from traversal.utils import bidirectional_bfs
+from traversal import Word2VecEnhancedTraverser
 
 def train_path_predictor(data, model, device, num_epochs=50, batch_size=32, 
                          num_train_pairs=1000, learning_rate=0.001, 
@@ -356,71 +360,223 @@ def main():
     np.random.seed(42)
     random.seed(42)
     
-    # Check if GPU is available
+    # Determine device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
     # Create directories
-    os.makedirs('plots', exist_ok=True)
+    os.makedirs('data', exist_ok=True)
     os.makedirs('models', exist_ok=True)
+    os.makedirs('plots', exist_ok=True)
     
-    # Load graph data
-    edge_file = "data/wiki_edges.csv"  # Replace with your actual file path
-    max_nodes = 1000  # Adjust based on your needs and resources
-    data = load_graph_data(edge_file, feature_dim=64, max_nodes=max_nodes, ensure_connected=True)
+    # Load graph data with Word2Vec embeddings
+    edge_file = "data/wiki_edges.csv"  # Your generated edge file
+    max_nodes = 1000  # Adjust based on your needs
+    
+    print("Loading graph data with Word2Vec embeddings...")
+    data = load_graph_data(
+        edge_file, 
+        feature_dim=64, 
+        max_nodes=max_nodes, 
+        ensure_connected=True,
+        use_word2vec=True  # Enable Word2Vec embeddings
+    )
     print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
     
-    # Visualize sample of the graph
-    plot_graph_sample(data)
+    # Check if we can load a Word2Vec model
+    word2vec_model = None
+    try:
+        # Try to load existing model
+        model_path = os.path.join("data", "word2vec_model")
+        if os.path.exists(model_path):
+            print(f"Loading Word2Vec model from {model_path}")
+            word2vec_model = Word2Vec.load(model_path)
+            print(f"Loaded Word2Vec model with {len(word2vec_model.wv)} word vectors")
+        else:
+            print("Word2Vec model not found. Only GNN embeddings will be used.")
+    except Exception as e:
+        print(f"Error loading Word2Vec model: {e}")
     
-    # Feature normalization
-    scaler = StandardScaler()
-    data.x = torch.from_numpy(
-        scaler.fit_transform(data.x.numpy())
-    ).float()
-    
-    # Initialize model
+    # Initialize GNN model
     input_dim = data.x.size(1)
     hidden_dim = 256
     output_dim = 64
     
-    # Create both standard and enhanced models
-    standard_model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
-    enhanced_model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
-    
-    # Train standard model
-    print("\nTraining standard model...")
-    standard_model = train_path_predictor(
-        data, 
-        standard_model, 
-        device, 
-        num_epochs=50, 
-        batch_size=32, 
-        num_train_pairs=1000
+    print("Initializing GNN model...")
+    model = EnhancedWikiGraphSAGE(
+        input_dim, hidden_dim, output_dim,
+        num_layers=4,
+        word2vec_model=word2vec_model
     )
     
-    # Save final model
-    torch.save(standard_model.state_dict(), "models/standard_model_final.pt")
+    # Load a pre-trained model if available
+    model_path = "models/enhanced_model_final.pt"
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print(f"Loaded pre-trained model from {model_path}")
+    else:
+        print("Pre-trained model not found. Using untrained model.")
     
-    # Train enhanced model
-    print("\nTraining enhanced model...")
-    enhanced_model = train_path_predictor(
-        data, 
-        enhanced_model, 
-        device, 
-        num_epochs=50, 
-        batch_size=32, 
-        num_train_pairs=1000
+    model = model.to(device)
+    model.eval()  # Set to evaluation mode
+    
+    # Create our Word2Vec-enhanced traverser
+    print("Creating Word2Vec-enhanced traverser...")
+    traverser = Word2VecEnhancedTraverser(
+        model, data, device,
+        beam_width=5,
+        heuristic_weight=1.5,
+        num_neighbors=20,
+        num_hops=2
     )
     
-    # Save final model
-    torch.save(enhanced_model.state_dict(), "models/enhanced_model_final.pt")
+    # Define a set of test cases
+    num_test_cases = 5
+    test_cases = []
     
-    # Visualize embeddings
-    visualize_embeddings(standard_model, data, device)
-    visualize_embeddings(enhanced_model, data, device, sample_size=500)
+    # Create test cases with different path lengths
+    all_nodes = list(range(data.x.size(0)))
     
-    print("Training complete. Models saved to 'models/' directory.")
+    print(f"Generating {num_test_cases} test cases...")
+    for _ in range(num_test_cases):
+        # Choose random source
+        source_idx = random.choice(all_nodes)
+        source_id = data.reverse_mapping[source_idx]
+        
+        # Find a target with a valid path
+        found_target = False
+        attempts = 0
+        max_attempts = 100
+        
+        while not found_target and attempts < max_attempts:
+            target_idx = random.choice(all_nodes)
+            target_id = data.reverse_mapping[target_idx]
+            
+            # Skip if same node
+            if target_idx == source_idx:
+                attempts += 1
+                continue
+            
+            # Check if there's a path
+            path, _ = bidirectional_bfs(data, source_idx, target_idx)
+            if path and 3 <= len(path) <= 10:  # Ensure reasonable path length
+                test_cases.append((source_id, target_id, len(path)))
+                found_target = True
+            
+            attempts += 1
+    
+    print(f"Generated {len(test_cases)} test cases")
+    
+    # Run each test case with different methods
+    methods = ["bidirectional", "beam", "hybrid", "auto"]
+    results = {}
+    
+    print("\nRunning traversal with different methods...")
+    for i, (source_id, target_id, optimal_length) in enumerate(test_cases):
+        print(f"\nTest Case {i+1}: {source_id} → {target_id} (Optimal length: {optimal_length})")
+        
+        # Get the BFS baseline
+        source_idx = data.node_mapping[source_id]
+        target_idx = data.node_mapping[target_id]
+        bfs_path, bfs_nodes = bidirectional_bfs(data, source_idx, target_idx)
+        bfs_path_ids = [data.reverse_mapping[idx] for idx in bfs_path] if bfs_path else []
+        
+        print(f"BFS: {len(bfs_path_ids)} nodes, explored {bfs_nodes} nodes")
+        
+        # Run with different methods
+        for method in methods:
+            try:
+                print(f"Running {method} traversal...")
+                path, nodes_explored = traverser.traverse(
+                    source_id, target_id, max_steps=30, method=method
+                )
+                
+                # Record results
+                if i not in results:
+                    results[i] = {'bfs': (bfs_path_ids, bfs_nodes)}
+                
+                results[i][method] = (path, nodes_explored)
+                
+                # Print stats
+                success = len(path) > 0 and path[-1] == target_id
+                success_mark = "✓" if success else "✗"
+                
+                print(f"{method.capitalize()}: {success_mark} {len(path)} nodes, explored {nodes_explored} nodes")
+                
+                # Calculate improvement over BFS if successful
+                if success and bfs_nodes > 0:
+                    nodes_reduction = (bfs_nodes - nodes_explored) / bfs_nodes * 100
+                    print(f"  {nodes_reduction:.2f}% fewer nodes explored than BFS")
+                
+            except Exception as e:
+                print(f"Error in {method} traversal: {e}")
+    
+    # Create visualizations if possible
+    try:
+        from utils.visualization import compare_paths_visualization
+        
+        # Choose a test case to visualize
+        test_case = results[0]  # First test case
+        source_id, target_id = test_cases[0][0], test_cases[0][1]
+        
+        # Prepare path data for visualization
+        paths = {}
+        paths["BFS"] = [data.node_mapping[node_id] for node_id in test_case['bfs'][0] if node_id in data.node_mapping]
+        
+        for method in methods:
+            if method in test_case:
+                path_ids = test_case[method][0]
+                if path_ids:
+                    paths[method.capitalize()] = [data.node_mapping[node_id] for node_id in path_ids if node_id in data.node_mapping]
+        
+        # Create visualization
+        compare_paths_visualization(
+            data, paths, 
+            f"Path Comparison with Word2Vec Enhancement: {source_id} → {target_id}"
+        )
+        
+        print("\nVisualization saved to 'plots/path_comparison.png'")
+    except Exception as e:
+        print(f"Error creating visualization: {e}")
+    
+    # Compute overall statistics
+    print("\nOverall Statistics:")
+    print("-" * 50)
+    
+    avg_reduction = {}
+    success_rate = {}
+    avg_path_length = {}
+    
+    for method in methods:
+        # Success rate
+        successes = 0
+        path_lengths = []
+        reduction_values = []
+        
+        for i in results:
+            if method in results[i]:
+                path, nodes = results[i][method]
+                bfs_path, bfs_nodes = results[i]['bfs']
+                
+                if path and path[-1] == test_cases[i][1]:  # Successful traversal
+                    successes += 1
+                    path_lengths.append(len(path))
+                    
+                    if bfs_nodes > 0:
+                        reduction = (bfs_nodes - nodes) / bfs_nodes * 100
+                        reduction_values.append(reduction)
+        
+        # Calculate stats
+        success_rate[method] = successes / len(results) if results else 0
+        avg_path_length[method] = np.mean(path_lengths) if path_lengths else 0
+        avg_reduction[method] = np.mean(reduction_values) if reduction_values else 0
+        
+        print(f"{method.capitalize()}:")
+        print(f"  Success Rate: {success_rate[method]:.2%}")
+        print(f"  Avg Path Length: {avg_path_length[method]:.2f}")
+        print(f"  Avg Reduction in Nodes Explored: {avg_reduction[method]:.2f}%")
+    
+    return results
 
 if __name__ == "__main__":
     main()

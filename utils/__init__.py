@@ -1,4 +1,9 @@
-from utils.data import load_graph_data, neighbor_sampler, generate_test_pairs
+from utils.data import (
+    load_graph_data, 
+    neighbor_sampler, 
+    generate_test_pairs, 
+    initialize_word2vec_model,
+)
 from utils.visualization import (
     plot_graph_sample, 
     visualize_embeddings,
@@ -14,7 +19,7 @@ from utils.evaluation import (
     visualize_comparison,
     analyze_by_path_difficulty
 )
-
+from utils.crawler import main as crawl_main
 from traversal.utils import bidirectional_bfs
 
 __all__ = [
@@ -32,5 +37,7 @@ __all__ = [
     'analyze_by_path_difficulty',
     'bidirectional_bfs',
     'visualize_results_by_difficulty',
-    'generate_test_pairs'
+    'generate_test_pairs',
+    'initialize_word2vec_model',
+    'crawl_main',
 ]

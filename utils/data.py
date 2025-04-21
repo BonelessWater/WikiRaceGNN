@@ -2,21 +2,25 @@ import torch
 import pandas as pd
 import numpy as np
 import random
-import networkx as nx
+import os
 from torch_geometric.data import Data
 from torch_geometric.utils import to_undirected
 from traversal.utils import bidirectional_bfs
 from tqdm import tqdm
+from gensim.models import Word2Vec
+from gensim.utils import simple_preprocess
 
-def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=True):
+def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=True, use_word2vec=True):
     """
     Load graph data from edge list file with option to reduce to a smaller connected graph.
+    Use Word2Vec for node embeddings instead of random embeddings.
     
     Args:
         edge_file: Path to the CSV edge list
         feature_dim: Dimension of node features to generate
         max_nodes: Maximum number of nodes to include (if None, use all)
         ensure_connected: Ensure the sampled graph is connected
+        use_word2vec: Whether to use Word2Vec for embeddings
         
     Returns:
         Data object with graph information
@@ -28,6 +32,7 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
         # If file not found, create a simple test graph
         print(f"Edge file {edge_file} not found. Creating a test graph.")
         # Create a simple grid graph
+        import networkx as nx
         G = nx.grid_2d_graph(10, 10)
         # Relabel nodes to integers
         G = nx.convert_node_labels_to_integers(G)
@@ -35,8 +40,46 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
         edges = list(G.edges())
         df = pd.DataFrame(edges, columns=['id1', 'id2'])
     
+    # Check if node metadata exists (for titles/urls)
+    base_dir = os.path.dirname(edge_file)
+    node_meta_path = os.path.join(base_dir, "wiki_nodes.json")
+    has_node_metadata = os.path.exists(node_meta_path)
+    
+    if has_node_metadata:
+        import json
+        with open(node_meta_path, 'r', encoding='utf-8') as f:
+            node_metadata = json.load(f)
+        print(f"Loaded node metadata for {len(node_metadata)} nodes")
+    
+    # Load or check for Word2Vec model
+    word2vec_model = None
+    embedding_file = os.path.join(base_dir, "wiki_embeddings.npy")
+    embeddings = None
+    
+    if use_word2vec:
+        w2v_model_path = os.path.join(base_dir, "word2vec_model")
+        if os.path.exists(w2v_model_path):
+            try:
+                print(f"Loading Word2Vec model from {w2v_model_path}")
+                word2vec_model = Word2Vec.load(w2v_model_path)
+                print(f"Loaded Word2Vec model with {len(word2vec_model.wv)} word vectors")
+            except Exception as e:
+                print(f"Error loading Word2Vec model: {e}")
+                word2vec_model = None
+        
+        # Load pre-computed embeddings if available
+        if os.path.exists(embedding_file):
+            try:
+                print(f"Loading pre-computed embeddings from {embedding_file}")
+                embeddings = np.load(embedding_file)
+                print(f"Loaded embeddings of shape {embeddings.shape}")
+            except Exception as e:
+                print(f"Error loading embeddings: {e}")
+                embeddings = None
+    
     if max_nodes is not None:
         # Create networkx graph for connectivity analysis
+        import networkx as nx
         G = nx.Graph()
         for _, row in df.iterrows():
             G.add_edge(row['id1'], row['id2'])
@@ -52,6 +95,7 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
                 selected_nodes = list(largest_cc)
             else:
                 # Start with a random node from the largest component
+                import random
                 start_node = random.choice(list(largest_cc))
                 selected_nodes = [start_node]
                 frontier = list(nx.neighbors(G, start_node))
@@ -67,6 +111,7 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
                                 frontier.append(neighbor)
         else:
             # Simply select random nodes
+            import random
             selected_nodes = random.sample(list(G.nodes()), min(max_nodes, len(G.nodes())))
         
         # Filter edges to only include selected nodes
@@ -94,10 +139,49 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
     ], dtype=torch.long)
     
     # Make the graph undirected
+    from torch_geometric.utils import to_undirected
     edge_index = to_undirected(edge_index)
     
-    # Generate random node features (would be replaced with actual features in practice)
-    x = torch.randn((num_nodes, feature_dim))
+    # Generate node features based on the approach selected
+    if embeddings is not None and len(embeddings) >= num_nodes:
+        # Use pre-computed embeddings
+        print("Using pre-computed embeddings")
+        x = torch.tensor(embeddings[:num_nodes], dtype=torch.float)
+    elif word2vec_model is not None and has_node_metadata:
+        # Generate embeddings using Word2Vec model
+        print("Generating embeddings using Word2Vec model")
+        x = torch.zeros((num_nodes, feature_dim), dtype=torch.float)
+        
+        # Preprocess titles and generate embeddings
+        for node_id, idx in node_mapping.items():
+            if str(node_id) in node_metadata:
+                title = node_metadata[str(node_id)]['title']
+                # Preprocess title
+                tokens = simple_preprocess(title.replace("_", " "), deacc=True)
+                
+                if tokens:
+                    # Get and average word vectors
+                    vectors = []
+                    for token in tokens:
+                        if token in word2vec_model.wv:
+                            vectors.append(word2vec_model.wv[token])
+                    
+                    if vectors:
+                        # Average vectors to get node embedding
+                        x[idx] = torch.tensor(np.mean(vectors, axis=0), dtype=torch.float)
+                    else:
+                        # Random embedding if no tokens in vocabulary
+                        x[idx] = torch.randn(feature_dim)
+                else:
+                    # Random embedding if no tokens
+                    x[idx] = torch.randn(feature_dim)
+            else:
+                # Random embedding if no metadata
+                x[idx] = torch.randn(feature_dim)
+    else:
+        # Generate random node features if no Word2Vec model available
+        print("Using random embeddings")
+        x = torch.randn((num_nodes, feature_dim))
     
     # Create a PyG Data object
     data = Data(x=x, edge_index=edge_index)
@@ -121,9 +205,89 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
     
     data.adj_list = adj_list
     
+    # Add node titles and URLs if available
+    if has_node_metadata:
+        node_titles = {}
+        node_urls = {}
+        
+        for node_id, idx in node_mapping.items():
+            if str(node_id) in node_metadata:
+                node_titles[idx] = node_metadata[str(node_id)]['title']
+                node_urls[idx] = node_metadata[str(node_id)]['url']
+        
+        data.node_titles = node_titles
+        data.node_urls = node_urls
+    
     return data
 
-
+def initialize_word2vec_model(data, output_dir="data", feature_dim=64):
+    """
+    Initialize a Word2Vec model for a graph.
+    
+    Args:
+        data: Graph data object
+        output_dir: Directory to save the model
+        feature_dim: Dimension of word vectors
+        
+    Returns:
+        Word2Vec model
+    """
+    # Check if we have titles
+    if not hasattr(data, 'node_titles'):
+        print("No node titles available. Cannot train Word2Vec model.")
+        return None
+    
+    try:
+        from gensim.models import Word2Vec
+        from gensim.models.phrases import Phrases, Phraser
+        from gensim.utils import simple_preprocess
+    except ImportError:
+        print("Gensim not installed. Cannot train Word2Vec model.")
+        return None
+    
+    # Collect and preprocess titles
+    print("Preprocessing node titles for Word2Vec...")
+    preprocessed_titles = []
+    
+    for _, title in data.node_titles.items():
+        # Preprocess title
+        tokens = simple_preprocess(title.replace("_", " "), deacc=True)
+        if tokens:
+            preprocessed_titles.append(tokens)
+    
+    if not preprocessed_titles:
+        print("No valid titles for Word2Vec training.")
+        return None
+    
+    # Train Phrases model (for bigrams)
+    print("Building phrases (bigrams)...")
+    phrases = Phrases(preprocessed_titles, min_count=5, threshold=10)
+    bigram = Phraser(phrases)
+    
+    # Apply bigram model
+    preprocessed_titles = [bigram[title] for title in preprocessed_titles]
+    
+    # Train Word2Vec model
+    print("Training Word2Vec model...")
+    word2vec_model = Word2Vec(
+        sentences=preprocessed_titles,
+        vector_size=feature_dim,
+        window=5,
+        min_count=1,  # We want embeddings for all words in titles
+        workers=4,
+        sg=1,  # Skip-gram model
+        epochs=10
+    )
+    
+    # Save model
+    os.makedirs(output_dir, exist_ok=True)
+    model_path = os.path.join(output_dir, "word2vec_model")
+    word2vec_model.save(model_path)
+    print(f"Word2Vec model trained with {len(word2vec_model.wv)} word vectors")
+    print(f"Saved model to {model_path}")
+    
+    return word2vec_model
+      
 def neighbor_sampler(nodes, edge_index, num_hops=2, num_neighbors=10):
     """
     Sample neighbors for a batch of nodes.

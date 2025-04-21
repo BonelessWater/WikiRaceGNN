@@ -15,8 +15,9 @@ requests             = ">=2.32.3,<3.0.0"
 torch-geometric      = "^2.6.1"
 matplotlib           = ">=3.10.1,<4.0.0"
 networkx             = ">=3.4.2,<4.0.0"
-scipy                = ">=1.15.2,<2.0.0"
-scikit-learn = "^1.6.1"
+scipy                = ">=1.7.0,<2.0.0"
+scikit-learn         = "^1.6.1"
+gensim               = "^4.3.3"
 
 [tool.poetry.dependencies.torch]
 version = "2.0.1+cu117"

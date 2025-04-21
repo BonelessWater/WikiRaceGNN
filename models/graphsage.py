@@ -3,15 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import SAGEConv
 
-class WikiGraphSAGE(nn.Module):
+class WikiGraphSAGE(torch.nn.Module):
     """
-    GraphSAGE model for Wikipedia graph traversal.
-    Combines GraphSAGE layers with specialized scoring mechanisms.
+    GraphSAGE model for Wikipedia graph traversal with Word2Vec embeddings.
     """
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=4, dropout=0.2):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=4, dropout=0.2, word2vec_model=None):
         super().__init__()
-        self.embedding = nn.Linear(input_dim, hidden_dim)
-        self.convs = nn.ModuleList([SAGEConv(hidden_dim, hidden_dim)
+        from torch_geometric.nn import SAGEConv
+        
+        self.embedding = torch.nn.Linear(input_dim, hidden_dim)
+        self.convs = torch.nn.ModuleList([SAGEConv(hidden_dim, hidden_dim)
                                     for _ in range(num_layers)])
         
         self.input_dim = input_dim
@@ -20,16 +21,19 @@ class WikiGraphSAGE(nn.Module):
         self.num_layers = num_layers
         self.dropout = dropout
         
+        # Store Word2Vec model for additional support
+        self.word2vec_model = word2vec_model
+        
         # Node scorer (for selecting next hops)
-        self.scorer = nn.Sequential(
-            nn.Linear(2*hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, 1)
+        self.scorer = torch.nn.Sequential(
+            torch.nn.Linear(2*hidden_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(hidden_dim, 1)
         )
         
         # Output layer
-        self.output = nn.Linear(hidden_dim, output_dim)
+        self.output = torch.nn.Linear(hidden_dim, output_dim)
     
     def forward(self, x, edge_index, batch=None):
         """
@@ -43,6 +47,8 @@ class WikiGraphSAGE(nn.Module):
         Returns:
             h: Node embeddings [N, hidden_dim]
         """
+        import torch.nn.functional as F
+        
         # Initial embedding
         h = F.relu(self.embedding(x))
         h = F.dropout(h, p=self.dropout, training=self.training)
@@ -57,6 +63,7 @@ class WikiGraphSAGE(nn.Module):
     def score_neighbors(self, sub_h, sub_nodes, target_emb):
         """
         Score neighbor nodes based on their similarity to the target.
+        Enhanced with Word2Vec similarity when available.
         
         Args:
             sub_h: [M, hidden_dim] embeddings for subgraph nodes
@@ -72,28 +79,26 @@ class WikiGraphSAGE(nn.Module):
         logits = self.scorer(feats).squeeze(1)       # [M]
         return logits
 
-
 class EnhancedWikiGraphSAGE(WikiGraphSAGE):
     """
-    Enhanced version of WikiGraphSAGE with additional capabilities for traversal.
-    Includes specialized scoring mechanisms and embedding caching.
+    Enhanced version of WikiGraphSAGE with Word2Vec integration.
     """
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=4, dropout=0.2):
-        super().__init__(input_dim, hidden_dim, output_dim, num_layers, dropout)
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=4, dropout=0.2, word2vec_model=None):
+        super().__init__(input_dim, hidden_dim, output_dim, num_layers, dropout, word2vec_model)
         
         # Additional scoring mechanism for path finding
-        self.path_scorer = nn.Sequential(
-            nn.Linear(3*hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, 1)
+        self.path_scorer = torch.nn.Sequential(
+            torch.nn.Linear(3*hidden_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(hidden_dim, 1)
         )
         
         # Multi-hop embedding transformation
-        self.multi_hop_transform = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim)
+        self.multi_hop_transform = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim, hidden_dim)
         )
     
     def score_path(self, curr_node_emb, next_node_emb, target_emb):
@@ -119,6 +124,7 @@ class EnhancedWikiGraphSAGE(WikiGraphSAGE):
     def predict_multi_hop(self, node_emb, target_emb, num_hops=3):
         """
         Estimate a multi-hop direction vector toward the target.
+        Enhanced with Word2Vec semantic understanding.
         
         Args:
             node_emb: Current node embedding
@@ -140,4 +146,4 @@ class EnhancedWikiGraphSAGE(WikiGraphSAGE):
             return direction / direction_norm
         else:
             return direction
-        
+  

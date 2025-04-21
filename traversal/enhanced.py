@@ -1,7 +1,594 @@
 import torch
 import torch.nn.functional as F
 import heapq
+import numpy as np
 from traversal.base import BaseTraverser
+from gensim.utils import simple_preprocess
+
+class Word2VecEnhancedTraverser:
+    """
+    A graph traverser that leverages Word2Vec semantics for more intelligent path finding.
+    This traverser combines GNN embeddings with Word2Vec semantic understanding.
+    """
+    def __init__(self, model, data, device, beam_width=5, heuristic_weight=1.5, 
+                 max_memory_nodes=1000, num_neighbors=20, num_hops=2):
+        self.model = model
+        self.data = data
+        self.device = device
+        self.beam_width = beam_width
+        self.heuristic_weight = heuristic_weight
+        self.max_memory_nodes = max_memory_nodes
+        self.num_neighbors = num_neighbors
+        self.num_hops = num_hops
+        
+        # State tracking
+        self.cache = {}  # Cache for node embeddings
+        self.nodes_explored = 0
+        
+        # Get Word2Vec model from the GNN model if available
+        self.word2vec_model = getattr(model, 'word2vec_model', None)
+        
+        # Check if node titles are available
+        self.has_titles = hasattr(data, 'node_titles') and data.node_titles
+        
+        # Set semantic similarity type
+        self.use_word2vec_similarity = self.word2vec_model is not None and self.has_titles
+        
+        if self.use_word2vec_similarity:
+            print("Using Word2Vec semantic similarity for traversal")
+        else:
+            print("Word2Vec not available, using only GNN embeddings")
+    
+    def reset_exploration_counter(self):
+        """Reset the counter for nodes explored during traversal"""
+        self.nodes_explored = 0
+        
+    def get_node_embedding(self, node_idx):
+        """
+        Get the embedding for a single node.
+        
+        Args:
+            node_idx: Node index
+            
+        Returns:
+            embedding: Node embedding vector
+        """
+        if node_idx in self.cache:
+            return self.cache[node_idx]
+        
+        with torch.no_grad():
+            # Create a single-node feature matrix
+            node_x = self.data.x[node_idx].unsqueeze(0).to(self.device)
+            
+            # Create a batch indicator (just zeros for a single node)
+            batch = torch.zeros(1, dtype=torch.long, device=self.device)
+            
+            # Create a local neighborhood subgraph
+            import torch_geometric.utils as utils
+            
+            # Get node neighbors at 1-hop distance
+            neighbors = []
+            for i in range(self.data.edge_index.size(1)):
+                if self.data.edge_index[0, i].item() == node_idx:
+                    neighbors.append(self.data.edge_index[1, i].item())
+                elif self.data.edge_index[1, i].item() == node_idx:
+                    neighbors.append(self.data.edge_index[0, i].item())
+            
+            # Include the node itself
+            subgraph_nodes = [node_idx] + neighbors
+            subgraph_nodes = list(set(subgraph_nodes))  # Remove duplicates
+            
+            # Convert to tensor
+            sub_nodes = torch.tensor(subgraph_nodes, dtype=torch.long)
+            
+            # Extract subgraph
+            sub_x = self.data.x[sub_nodes].to(self.device)
+            
+            # Create mapping for edge indices
+            mapping = {n: i for i, n in enumerate(subgraph_nodes)}
+            
+            # Extract edges that connect nodes in the subgraph
+            edge_list = []
+            for i in range(self.data.edge_index.size(1)):
+                src = self.data.edge_index[0, i].item()
+                dst = self.data.edge_index[1, i].item()
+                if src in mapping and dst in mapping:
+                    edge_list.append([mapping[src], mapping[dst]])
+            
+            # Create edge index tensor for subgraph
+            if edge_list:
+                sub_edge_index = torch.tensor(edge_list, dtype=torch.long).t().to(self.device)
+            else:
+                # If no edges, create a self-loop
+                sub_edge_index = torch.tensor([[0], [0]], dtype=torch.long).to(self.device)
+            
+            # Create batch indicator for subgraph
+            sub_batch = torch.zeros(sub_x.size(0), dtype=torch.long, device=self.device)
+            
+            # Run the model on the subgraph
+            node_embeddings = self.model(sub_x, sub_edge_index, sub_batch)
+            
+            # Find the embedding of the target node
+            embedding = node_embeddings[mapping[node_idx]]
+            
+            # Cache the result if we have space
+            if len(self.cache) < self.max_memory_nodes:
+                self.cache[node_idx] = embedding
+                
+            return embedding
+    
+    def get_word2vec_similarity(self, node1_idx, node2_idx):
+        """
+        Calculate semantic similarity between two nodes using Word2Vec.
+        
+        Args:
+            node1_idx: First node index
+            node2_idx: Second node index
+            
+        Returns:
+            float: Similarity score
+        """
+        if not self.use_word2vec_similarity:
+            return 0.0
+        
+        # Get node titles
+        title1 = self.data.node_titles.get(node1_idx, "")
+        title2 = self.data.node_titles.get(node2_idx, "")
+        
+        if not title1 or not title2:
+            return 0.0
+        
+        # Preprocess titles
+        tokens1 = simple_preprocess(title1.replace("_", " "), deacc=True)
+        tokens2 = simple_preprocess(title2.replace("_", " "), deacc=True)
+        
+        if not tokens1 or not tokens2:
+            return 0.0
+        
+        # Calculate average word vectors for each title
+        vecs1 = []
+        vecs2 = []
+        
+        for token in tokens1:
+            if token in self.word2vec_model.wv:
+                vecs1.append(self.word2vec_model.wv[token])
+        
+        for token in tokens2:
+            if token in self.word2vec_model.wv:
+                vecs2.append(self.word2vec_model.wv[token])
+        
+        if not vecs1 or not vecs2:
+            return 0.0
+        
+        # Average the vectors
+        vec1 = np.mean(vecs1, axis=0)
+        vec2 = np.mean(vecs2, axis=0)
+        
+        # Calculate cosine similarity
+        from sklearn.metrics.pairwise import cosine_similarity
+        sim = cosine_similarity([vec1], [vec2])[0][0]
+        
+        return sim
+    
+    def sample_neighbors(self, node_idx, exclude_nodes=None):
+        """
+        Sample neighbors for a node.
+        
+        Args:
+            node_idx: Index of the node
+            exclude_nodes: Set of nodes to exclude
+            
+        Returns:
+            list: List of sampled neighbor node indices
+        """
+        if exclude_nodes is None:
+            exclude_nodes = set()
+            
+        # Get neighbors from adjacency list
+        if node_idx in self.data.adj_list:
+            neighbors = self.data.adj_list[node_idx]
+        else:
+            # Fallback to edge_index lookup
+            neighbors = []
+            for i in range(self.data.edge_index.size(1)):
+                if self.data.edge_index[0, i].item() == node_idx:
+                    neighbors.append(self.data.edge_index[1, i].item())
+        
+        # Filter out excluded nodes
+        valid_neighbors = [n for n in neighbors if n not in exclude_nodes]
+        
+        # Update exploration counter
+        self.nodes_explored += len(valid_neighbors)
+        
+        return valid_neighbors
+    
+    def score_node(self, node_idx, target_idx, current_idx=None, path_cost=0):
+        """
+        Score a node based on similarity to target and path cost.
+        Enhanced with Word2Vec semantic guidance.
+        
+        Args:
+            node_idx: Node to score
+            target_idx: Target node
+            current_idx: Current node (for path-based scoring)
+            path_cost: Cost of the path so far
+            
+        Returns:
+            float: Node score
+        """
+        # Get GNN embeddings
+        node_emb = self.get_node_embedding(node_idx)
+        target_emb = self.get_node_embedding(target_idx)
+        
+        # Get GNN similarity (cosine similarity)
+        gnn_sim = F.cosine_similarity(node_emb.unsqueeze(0), target_emb.unsqueeze(0)).item()
+        
+        # Calculate Word2Vec semantic similarity
+        w2v_sim = 0.0
+        if self.use_word2vec_similarity:
+            w2v_sim = self.get_word2vec_similarity(node_idx, target_idx)
+        
+        # If we have a current node, consider path continuity
+        path_continuity = 0.0
+        if current_idx is not None:
+            current_emb = self.get_node_embedding(current_idx)
+            node_emb = self.get_node_embedding(node_idx)
+            
+            # Path continuity score (cosine similarity with current node)
+            path_continuity = F.cosine_similarity(
+                current_emb.unsqueeze(0), node_emb.unsqueeze(0)
+            ).item() * 0.3  # Lower weight for continuity
+        
+        # Combine scores
+        gnn_weight = 0.6  # GNN embedding weight
+        w2v_weight = 0.4  # Word2Vec semantic weight
+        
+        # If Word2Vec is not available, use only GNN similarity
+        if not self.use_word2vec_similarity:
+            gnn_weight = 1.0
+            w2v_weight = 0.0
+        
+        # Final score combines similarity and path cost
+        similarity = (gnn_sim * gnn_weight) + (w2v_sim * w2v_weight) + path_continuity
+        
+        # A* formula: path_cost + heuristic * weight
+        score = path_cost + (1.0 - similarity) * self.heuristic_weight
+        
+        return score
+    
+    def bidirectional_semantic_search(self, start_idx, target_idx, max_steps=30):
+        """
+        Bidirectional search guided by both GNN embeddings and Word2Vec semantics.
+        
+        Args:
+            start_idx: Starting node index
+            target_idx: Target node index
+            max_steps: Maximum number of steps to take
+            
+        Returns:
+            tuple: (path, nodes_explored)
+        """
+        if start_idx == target_idx:
+            return [start_idx], 1
+        
+        # Reset exploration counter
+        self.reset_exploration_counter()
+        
+        # Initialize forward and backward search queues
+        # Format: (score, cost, node_idx, path)
+        forward_queue = [(0, 0, start_idx, [start_idx])]
+        backward_queue = [(0, 0, target_idx, [target_idx])]
+        
+        # Visited sets
+        forward_visited = {start_idx: 0}  # node -> cost
+        backward_visited = {target_idx: 0}
+        
+        # Best paths
+        forward_paths = {start_idx: [start_idx]}
+        backward_paths = {target_idx: [target_idx]}
+        
+        # For tracking the best meeting point
+        best_meeting_node = None
+        best_meeting_cost = float('inf')
+        
+        for step in range(max_steps):
+            # Decide which direction to expand based on queue sizes
+            if len(forward_queue) <= len(backward_queue) and forward_queue:
+                # Expand forward
+                _, cost, node, path = heapq.heappop(forward_queue)
+                
+                # Check if we've found a meeting point
+                if node in backward_visited:
+                    total_cost = cost + backward_visited[node]
+                    if total_cost < best_meeting_cost:
+                        best_meeting_node = node
+                        best_meeting_cost = total_cost
+                
+                # Get neighbors
+                neighbors = self.sample_neighbors(node)
+                
+                # Score and expand neighbors
+                for neighbor in neighbors:
+                    new_cost = cost + 1
+                    
+                    # Only consider if we haven't found a better path already
+                    if neighbor not in forward_visited or new_cost < forward_visited[neighbor]:
+                        # Score this neighbor
+                        score = self.score_node(
+                            neighbor, target_idx, current_idx=node, path_cost=new_cost
+                        )
+                        
+                        # Update path
+                        new_path = path + [neighbor]
+                        forward_visited[neighbor] = new_cost
+                        forward_paths[neighbor] = new_path
+                        
+                        # Add to queue
+                        heapq.heappush(forward_queue, (score, new_cost, neighbor, new_path))
+                        
+                        # Check if this is a meeting point
+                        if neighbor in backward_visited:
+                            total_cost = new_cost + backward_visited[neighbor]
+                            if total_cost < best_meeting_cost:
+                                best_meeting_node = neighbor
+                                best_meeting_cost = total_cost
+            
+            elif backward_queue:
+                # Expand backward
+                _, cost, node, path = heapq.heappop(backward_queue)
+                
+                # Check if we've found a meeting point
+                if node in forward_visited:
+                    total_cost = cost + forward_visited[node]
+                    if total_cost < best_meeting_cost:
+                        best_meeting_node = node
+                        best_meeting_cost = total_cost
+                
+                # Get neighbors (for backward search, we need incoming edges)
+                # This is a simplification - in a directed graph, we would need to find incoming edges
+                neighbors = self.sample_neighbors(node)
+                
+                # Score and expand neighbors
+                for neighbor in neighbors:
+                    new_cost = cost + 1
+                    
+                    # Only consider if we haven't found a better path already
+                    if neighbor not in backward_visited or new_cost < backward_visited[neighbor]:
+                        # Score this neighbor
+                        score = self.score_node(
+                            neighbor, start_idx, current_idx=node, path_cost=new_cost
+                        )
+                        
+                        # Update path
+                        new_path = path + [neighbor]
+                        backward_visited[neighbor] = new_cost
+                        backward_paths[neighbor] = new_path
+                        
+                        # Add to queue
+                        heapq.heappush(backward_queue, (score, new_cost, neighbor, new_path))
+                        
+                        # Check if this is a meeting point
+                        if neighbor in forward_visited:
+                            total_cost = new_cost + forward_visited[neighbor]
+                            if total_cost < best_meeting_cost:
+                                best_meeting_node = neighbor
+                                best_meeting_cost = total_cost
+            
+            else:
+                # Both queues empty, no path exists
+                break
+            
+            # Early termination if we've found a good meeting point
+            if best_meeting_node is not None:
+                # Check if we can terminate
+                if ((not forward_queue or forward_queue[0][0] >= best_meeting_cost) and
+                    (not backward_queue or backward_queue[0][0] >= best_meeting_cost)):
+                    break
+        
+        # Reconstruct path if meeting point was found
+        if best_meeting_node is not None:
+            forward_path = forward_paths.get(best_meeting_node, [start_idx])
+            backward_path = backward_paths.get(best_meeting_node, [target_idx])
+            
+            # Combine paths (remove duplicate meeting point and reverse backward path)
+            full_path = forward_path + backward_path[::-1][1:]
+            
+            return full_path, self.nodes_explored
+        
+        # No path found
+        return [], self.nodes_explored
+    
+    def semantic_beam_search(self, start_idx, target_idx, max_steps=30):
+        """
+        Beam search with semantic guidance from Word2Vec and GNN embeddings.
+        
+        Args:
+            start_idx: Starting node index
+            target_idx: Target node index
+            max_steps: Maximum number of steps to take
+            
+        Returns:
+            tuple: (path, nodes_explored)
+        """
+        if start_idx == target_idx:
+            return [start_idx], 1
+        
+        # Reset exploration counter
+        self.reset_exploration_counter()
+        
+        # Initialize beam search
+        # Format: (score, path)
+        current_beams = [(0, [start_idx])]
+        visited = {start_idx}
+        
+        for step in range(max_steps):
+            if not current_beams:
+                break
+            
+            # Create next generation of beams
+            next_beams = []
+            
+            # Process current beams
+            for _, path in current_beams:
+                current_idx = path[-1]
+                
+                # Check if we've reached the target
+                if current_idx == target_idx:
+                    return path, self.nodes_explored
+                
+                # Get neighbors
+                neighbors = self.sample_neighbors(current_idx, exclude_nodes=set(path))
+                
+                # Score and add neighbors
+                for neighbor in neighbors:
+                    if neighbor not in visited:
+                        # Score this neighbor
+                        score = self.score_node(
+                            neighbor, target_idx, current_idx=current_idx, path_cost=len(path)
+                        )
+                        
+                        # Create new path
+                        new_path = path + [neighbor]
+                        
+                        # Add to candidates
+                        next_beams.append((score, new_path))
+                        visited.add(neighbor)
+                        
+                        # Early success
+                        if neighbor == target_idx:
+                            return new_path, self.nodes_explored
+            
+            # No candidates found
+            if not next_beams:
+                break
+            
+            # Select top-k beams for next iteration
+            next_beams.sort(key=lambda x: x[0])  # Sort by score (lower is better for A*)
+            current_beams = next_beams[:self.beam_width]
+        
+        # Return best path found if any
+        if current_beams:
+            best_path = min(current_beams, key=lambda x: x[0])[1]
+            return best_path, self.nodes_explored
+        
+        return [], self.nodes_explored
+    
+    def hybrid_semantic_search(self, start_idx, target_idx, max_steps=30):
+        """
+        Hybrid search combining both bidirectional and beam search with
+        semantic guidance from Word2Vec.
+        
+        Args:
+            start_idx: Starting node index
+            target_idx: Target node index
+            max_steps: Maximum number of steps to take
+            
+        Returns:
+            tuple: (path, nodes_explored)
+        """
+        # Calculate semantic similarity between start and target
+        start_emb = self.get_node_embedding(start_idx)
+        target_emb = self.get_node_embedding(target_idx)
+        similarity = F.cosine_similarity(start_emb.unsqueeze(0), target_emb.unsqueeze(0)).item()
+        
+        # Add Word2Vec similarity if available
+        if self.use_word2vec_similarity:
+            w2v_sim = self.get_word2vec_similarity(start_idx, target_idx)
+            similarity = (similarity * 0.6) + (w2v_sim * 0.4)
+        
+        # Choose search strategy based on similarity
+        if similarity > 0.5:  # Nodes are semantically close
+            # Try beam search first (faster for closely related nodes)
+            path, nodes1 = self.semantic_beam_search(
+                start_idx, target_idx, max_steps=max_steps//2
+            )
+            
+            if path and path[-1] == target_idx:
+                return path, nodes1
+            
+            # Fall back to bidirectional search
+            path, nodes2 = self.bidirectional_semantic_search(
+                start_idx, target_idx, max_steps=max_steps
+            )
+            
+            return path, nodes1 + nodes2
+        else:
+            # For semantically distant nodes, use bidirectional search first
+            path, nodes = self.bidirectional_semantic_search(
+                start_idx, target_idx, max_steps=max_steps
+            )
+            
+            return path, nodes
+    
+    def traverse(self, start_node_id, target_node_id, max_steps=30, method="auto"):
+        """
+        Main traversal method with multiple search strategies.
+        
+        Args:
+            start_node_id: Starting node ID
+            target_node_id: Target node ID
+            max_steps: Maximum number of steps to take
+            method: Search method to use
+                ("auto", "beam", "bidirectional", or "hybrid")
+            
+        Returns:
+            tuple: (path_ids, nodes_explored)
+        """
+        # Convert IDs to indices
+        if start_node_id not in self.data.node_mapping:
+            print(f"Error: Start node ID {start_node_id} not found in the graph")
+            return [], 0
+        
+        if target_node_id not in self.data.node_mapping:
+            print(f"Error: Target node ID {target_node_id} not found in the graph")
+            return [], 0
+        
+        start_idx = self.data.node_mapping[start_node_id]
+        target_idx = self.data.node_mapping[target_node_id]
+        
+        # Choose search method
+        if method == "auto":
+            # Calculate similarity to choose method
+            start_emb = self.get_node_embedding(start_idx)
+            target_emb = self.get_node_embedding(target_idx)
+            similarity = F.cosine_similarity(start_emb.unsqueeze(0), target_emb.unsqueeze(0)).item()
+            
+            # Add Word2Vec similarity if available
+            if self.use_word2vec_similarity:
+                w2v_sim = self.get_word2vec_similarity(start_idx, target_idx)
+                similarity = (similarity * 0.6) + (w2v_sim * 0.4)
+            
+            # Choose based on similarity
+            if similarity > 0.7:
+                method = "beam"  # Close nodes: use beam search
+            elif similarity > 0.3:
+                method = "hybrid"  # Medium distance: use hybrid search
+            else:
+                method = "bidirectional"  # Far nodes: use bidirectional search
+        
+        # Execute the selected method
+        if method == "beam":
+            path, nodes_explored = self.semantic_beam_search(
+                start_idx, target_idx, max_steps=max_steps
+            )
+        elif method == "bidirectional":
+            path, nodes_explored = self.bidirectional_semantic_search(
+                start_idx, target_idx, max_steps=max_steps
+            )
+        elif method == "hybrid":
+            path, nodes_explored = self.hybrid_semantic_search(
+                start_idx, target_idx, max_steps=max_steps
+            )
+        else:
+            print(f"Unknown method: {method}, using hybrid search")
+            path, nodes_explored = self.hybrid_semantic_search(
+                start_idx, target_idx, max_steps=max_steps
+            )
+        
+        # Convert path indices back to node IDs
+        path_ids = [self.data.reverse_mapping[idx] for idx in path]
+        
+        return path_ids, nodes_explored
 
 class EnhancedWikiTraverser(BaseTraverser):
     """
