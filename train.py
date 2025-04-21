@@ -539,7 +539,7 @@ def main():
     
     # Create visualizations if possible
     try:
-        from utils.visualization import compare_paths_visualization
+        from utils.visualization_manager import compare_paths_visualization
         
         # Choose a test case to visualize
         test_case = results[0]  # First test case

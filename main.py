@@ -117,7 +117,7 @@ def run_training(args, data, device):
 
 def run_evaluation(args, data, device, model=None):
     """Run evaluation mode"""
-    from evaluate import test_improved_traversers
+    from evaluate import test_traversers
     
     print("Starting evaluation...")
     
@@ -136,13 +136,18 @@ def run_evaluation(args, data, device, model=None):
             print(f"Warning: Model file {args.model_path} not found. Using untrained model.")
     
     # Run evaluation
-    results, summary = test_improved_traversers(
+    results, summary, difficulty_stats = test_traversers(
         data=data,
         device=device,
         max_steps=args.max_steps,
         num_pairs=10
     )
-    
+
+    print("\nEvaluation complete!")
+    print("Difficulty statistics:")
+    for difficulty, stats in difficulty_stats.items():
+        print(f"Difficulty {difficulty}: {stats}")
+            
     return results, summary
 
 def run_traversal(args, data, device):
@@ -265,7 +270,7 @@ def run_traversal(args, data, device):
     
     # Visualize if requested
     if args.visualize:
-        from utils.visualization import visualize_path, compare_paths_visualization
+        from utils.visualization_manager import visualize_path, compare_paths_visualization
         
         os.makedirs('plots', exist_ok=True)
         
@@ -356,6 +361,7 @@ def main():
         print(f"Loaded graph with {data.x.size(0)} nodes and {data.edge_index.size(1) // 2} edges")
         
         run_evaluation(args, data, device)
+
     else:  # traverse mode
         # Load graph data
         data = load_graph_data(
