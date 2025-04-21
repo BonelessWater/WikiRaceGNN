@@ -4,7 +4,7 @@ REM Script to run the complete WikiRaceGNN pipeline on Windows
 SETLOCAL
 
 REM Set the number of nodes for the graph
-SET MAX_NODES=1000
+SET MAX_NODES=100000
 
 echo === WikiRaceGNN Pipeline ===
 echo This script will generate data, train the model, and evaluate it.

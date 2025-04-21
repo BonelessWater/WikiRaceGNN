@@ -4,9 +4,9 @@ import os
 import numpy as np
 import random
 
-from models import EnhancedWikiGraphSAGE
-from traversal import EnhancedWikiTraverser
-from utils import load_graph_data, crawl_main
+from models import WikiGraphSAGE
+from traversal import GraphTraverser
+from utils import load_graph_data
 from utils.wikibuilder import create_wiki_edge_list
 
 def parse_args():
@@ -94,7 +94,7 @@ def run_training(args, data, device):
     hidden_dim = 256
     output_dim = 64
     
-    model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+    model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
     
     # Train the model
     model = train_path_predictor(
@@ -127,7 +127,7 @@ def run_evaluation(args, data, device, model=None):
         hidden_dim = 256
         output_dim = 64
         
-        model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+        model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
         
         if os.path.exists(args.model_path):
             model.load_state_dict(torch.load(args.model_path, map_location=device))
@@ -143,11 +143,6 @@ def run_evaluation(args, data, device, model=None):
         num_pairs=10
     )
 
-    print("\nEvaluation complete!")
-    print("Difficulty statistics:")
-    for difficulty, stats in difficulty_stats.items():
-        print(f"Difficulty {difficulty}: {stats}")
-            
     return results, summary
 
 def run_traversal(args, data, device):
@@ -159,7 +154,7 @@ def run_traversal(args, data, device):
     hidden_dim = 256
     output_dim = 64
     
-    model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
+    model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
     
     if os.path.exists(args.model_path):
         model.load_state_dict(torch.load(args.model_path, map_location=device))
@@ -170,7 +165,7 @@ def run_traversal(args, data, device):
     model = model.to(device)
     
     # Create traverser
-    traverser = EnhancedWikiTraverser(
+    traverser = GraphTraverser(
         model, data, device,
         beam_width=args.beam_width,
         heuristic_weight=args.heuristic_weight,

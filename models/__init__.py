@@ -1,6 +1,5 @@
-from models.graphsage import WikiGraphSAGE, EnhancedWikiGraphSAGE
+from models.graphsage import WikiGraphSAGE
 
 __all__ = [
     'WikiGraphSAGE',
-    'EnhancedWikiGraphSAGE',
 ]

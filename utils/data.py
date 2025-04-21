@@ -4,7 +4,6 @@ import numpy as np
 import random
 import os
 from torch_geometric.data import Data
-from torch_geometric.utils import to_undirected
 from traversal.utils import bidirectional_bfs
 from tqdm import tqdm
 from gensim.models import Word2Vec

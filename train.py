@@ -10,12 +10,10 @@ from torch.cuda.amp import autocast, GradScaler
 from gensim.models import Word2Vec
 from gensim.utils import simple_preprocess
 
-from models import WikiGraphSAGE, EnhancedWikiGraphSAGE
+from models import WikiGraphSAGE
 from utils import (
     load_graph_data, 
     neighbor_sampler, 
-    plot_graph_sample, 
-    visualize_embeddings,
     initialize_word2vec_model
 )
 from traversal.utils import bidirectional_bfs
@@ -397,13 +395,11 @@ def main():
     
     # Load graph data with Word2Vec embeddings
     edge_file = "data/wiki_edges.csv"  # Your generated edge file
-    max_nodes = 1000  # Adjust based on your needs
     
     print("Loading graph data with Word2Vec embeddings...")
     data = load_graph_data(
         edge_file, 
         feature_dim=64, 
-        max_nodes=max_nodes, 
         ensure_connected=True,
         use_word2vec=True  # Enable Word2Vec embeddings
     )
@@ -429,7 +425,7 @@ def main():
     output_dim = 64
     
     print("Initializing GNN model...")
-    model = EnhancedWikiGraphSAGE(
+    model = WikiGraphSAGE(
         input_dim, hidden_dim, output_dim,
         num_layers=4,
         word2vec_model=word2vec_model

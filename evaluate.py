@@ -5,14 +5,8 @@ import os
 import time
 from collections import defaultdict
 
-from models import WikiGraphSAGE, EnhancedWikiGraphSAGE
-from traversal import EnhancedGNNTraverser
-from traversal import (
-    ImprovedGraphTraverser, 
-    EnhancedBidirectionalTraverser, 
-    OptimizedImprovedGraphTraverser,
-    bidirectional_bfs
-)
+from models import WikiGraphSAGE
+from traversal import GraphTraverser, bidirectional_bfs
 from utils import (
     load_graph_data,
     generate_test_pairs,
@@ -61,7 +55,6 @@ def test_traversers(data, device, max_steps=100, num_pairs=10):
     output_dim = 64
     
     standard_model = WikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
-    enhanced_model = EnhancedWikiGraphSAGE(input_dim, hidden_dim, output_dim, num_layers=4)
     
     # Load trained models if available
     if os.path.exists("models/standard_model_final.pt"):
@@ -70,33 +63,24 @@ def test_traversers(data, device, max_steps=100, num_pairs=10):
     else:
         print("Standard model not found, using random weights")
         
-    if os.path.exists("models/enhanced_model_final.pt"):
-        enhanced_model.load_state_dict(torch.load("models/enhanced_model_final.pt", map_location=device))
-        print("Loaded enhanced model")
-    else:
-        print("Enhanced model not found, using random weights")
-    
     standard_model.eval()
-    enhanced_model.eval()
 
-    # Create traversers
-    improvedStandard = ImprovedGraphTraverser(standard_model, data, device, beam_width=5)
-    optimizedImprovedStandard = OptimizedImprovedGraphTraverser(standard_model, data, device)
-    standardGNN = EnhancedGNNTraverser(standard_model, data, device)
-    enhancedGNN = EnhancedGNNTraverser(enhanced_model, data, device)
-    
-    standardBidirectional = EnhancedBidirectionalTraverser(standard_model, data, device, beam_width=5)
-    enhancedBidirectional = EnhancedBidirectionalTraverser(enhanced_model, data, device, beam_width=5)
+    # Create traverser
+    standardTraverser = GraphTraverser(
+        standard_model, 
+        data, 
+        device, 
+        beam_width=3,
+        heuristic_weight=1.2,
+        exploration_penalty=0.1,
+        revisit_bonus=0.05,
+        max_expansions=50
+        )
     
     # Define algorithms to compare
     algorithms = {
         "BidirectionalBFS": lambda s, t, max_steps: bidirectional_bfs_wrapper(data, s, t, max_steps),
-        "ImprovedStandard": lambda s, t, max_steps: improvedStandard.traverse(s, t, max_steps),
-        "OptimizedImproved": lambda s, t, max_steps: optimizedImprovedStandard.traverse(s, t, max_steps),
-        "StandardGNN": lambda s, t, max_steps: standardGNN.traverse(s, t, max_steps),
-        "EnhancedGNN": lambda s, t, max_steps: enhancedGNN.traverse(s, t, max_steps),
-        "StandardBidirectional": lambda s, t, max_steps: standardBidirectional.traverse(s, t, max_steps),
-        "EnhancedBidirectional": lambda s, t, max_steps: enhancedBidirectional.traverse(s, t, max_steps),
+        "standardTraverser": lambda s, t, max_steps: standardTraverser.traverse(s, t, max_steps),
     } 
     
     # Generate test pairs with different path difficulties
@@ -241,7 +225,6 @@ def test_traversers(data, device, max_steps=100, num_pairs=10):
     # Run all visualizations
     models = {
         "Standard": standard_model,
-        "Enhanced": enhanced_model
     }
     
     visualize_all(

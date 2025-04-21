@@ -1,24 +1,11 @@
 from traversal.base import BaseTraverser
-from traversal.enhanced import (
-    EnhancedWikiTraverser, 
-    SmartGraphTraverser, 
-    ImprovedGraphTraverser, 
-    Word2VecEnhancedTraverser, 
-    OptimizedImprovedGraphTraverser,
-    EnhancedGNNTraverser,
-    EnhancedBidirectionalTraverser
-)
+from traversal.enhanced import GraphTraverser, Word2VecEnhancedTraverser, EnhancedWikiTraverser
 from traversal.utils import bidirectional_bfs
 
 __all__ = [
     'BaseTraverser',
-    'EnhancedWikiTraverser',
-    'bidirectional_bfs'
-    'SmartGraphTraverser',
-    'ImprovedGraphTraverser',
+    'GraphTraverser',
     'Word2VecEnhancedTraverser',
-    'OptimizedImprovedGraphTraverser',
-    'EnhancedGNNTraverser',
-    'EnhancedBidirectionalTraverser',
-    'SmartGraphTraverser',
+    'EnhancedWikiTraverser',
+    'bidirectional_bfs',
 ]
