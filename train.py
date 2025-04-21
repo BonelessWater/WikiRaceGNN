@@ -44,7 +44,12 @@ def train_path_predictor(data, model, device, num_epochs=50, batch_size=32,
     """
     model = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scaler = GradScaler()
+    
+    # Only use GradScaler with CUDA
+    use_cuda = device.type == 'cuda'
+    if use_cuda:
+        scaler = GradScaler()
+    
     scheduler = ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=5, verbose=True, min_lr=1e-6
     )
@@ -194,7 +199,24 @@ def train_path_predictor(data, model, device, num_epochs=50, batch_size=32,
                         sub_edge_index = torch.tensor(edge_list, dtype=torch.long).t().to(device)
                         
                         # Compute node embeddings
-                        with autocast():
+                        if use_cuda:
+                            with autocast():
+                                batch_tensor = torch.zeros(sub_x.size(0), dtype=torch.long).to(device)
+                                sub_h = model(sub_x, sub_edge_index, batch_tensor)
+                                
+                                # Get target embedding
+                                tgt_emb = full_h[tgt].detach()
+                                
+                                # Score neighbors and compute loss
+                                logits = model.score_neighbors(sub_h, sampled, tgt_emb)
+                                true_pos = mapping[next_node]
+                                
+                                loss = loss_fn(
+                                    logits.unsqueeze(0),  # [1, M]
+                                    torch.tensor([true_pos], device=device)
+                                )
+                        else:
+                            # Normal forward pass without autocast for CPU
                             batch_tensor = torch.zeros(sub_x.size(0), dtype=torch.long).to(device)
                             sub_h = model(sub_x, sub_edge_index, batch_tensor)
                             
@@ -210,13 +232,13 @@ def train_path_predictor(data, model, device, num_epochs=50, batch_size=32,
                                 torch.tensor([true_pos], device=device)
                             )
                             
-                            # Calculate accuracy
-                            pred = torch.argmax(logits).item()
-                            if pred == true_pos:
-                                batch_correct += 1
-                            batch_total += 1
-                            
-                            batch_loss += loss
+                        # Calculate accuracy
+                        pred = torch.argmax(logits).item()
+                        if pred == true_pos:
+                            batch_correct += 1
+                        batch_total += 1
+                        
+                        batch_loss += loss
             
             # Skip empty batches
             if batch_total == 0:
@@ -225,10 +247,14 @@ def train_path_predictor(data, model, device, num_epochs=50, batch_size=32,
             # Normalize batch loss
             batch_loss = batch_loss / batch_total
             
-            # Backpropagate
-            scaler.scale(batch_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            # Backpropagate (with or without scaler based on device)
+            if use_cuda:
+                scaler.scale(batch_loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                batch_loss.backward()
+                optimizer.step()
             
             # Update metrics
             total_loss += batch_loss.item()
@@ -346,10 +372,10 @@ def train_path_predictor(data, model, device, num_epochs=50, batch_size=32,
             break
     
     # Load the best model
-    model.load_state_dict(torch.load("models/best_model.pt"))
+    model.load_state_dict(torch.load("models/best_model.pt", map_location=device))
     
     # Save final model
-    torch.save(model.state_dict(), "models/final_model.pt")
+    torch.save(model.state_dict(), "models/enhanced_model_final.pt")
     
     return model
 
