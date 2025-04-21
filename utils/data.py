@@ -125,6 +125,10 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
         print(f"Reduced graph to {len(selected_nodes)} nodes and {len(filtered_edges)} edges")
 
     # Get unique node IDs
+    df['id1'] = df['id1'].astype(str)
+    df['id2'] = df['id2'].astype(str)
+
+    # Then proceed with the unique call
     node_ids = np.unique(df[['id1', 'id2']].values.flatten())
     num_nodes = len(node_ids)
     

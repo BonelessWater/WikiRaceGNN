@@ -23,6 +23,6 @@ __all__ = [
     'generate_test_pairs',
     'initialize_word2vec_model',
     'crawl_main',
-    'visualize_comparison',
+    'visualize_comparison'
     'visualize_all',
 ]

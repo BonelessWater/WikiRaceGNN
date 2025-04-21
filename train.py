@@ -20,7 +20,7 @@ from traversal.utils import bidirectional_bfs
 from traversal import Word2VecEnhancedTraverser
 
 def train_path_predictor(data, model, device, num_epochs=50, batch_size=32, 
-                         num_train_pairs=1000, learning_rate=0.001, 
+                         num_train_pairs=10000, learning_rate=0.001, 
                          weight_decay=0.0001, validation_split=0.2):
     """
     Train the GNN model with a focus on path prediction and navigation.

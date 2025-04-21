@@ -15,8 +15,10 @@ def parse_args():
     
     parser.add_argument('--edge_file', type=str, default='data/wiki_edges.csv',
                         help='Path to edge list CSV file')
+    
     parser.add_argument('--max_nodes', type=int, default=1000,
                         help='Maximum number of nodes to include in the graph')
+    
     parser.add_argument('--feature_dim', type=int, default=64,
                         help='Dimension of node features')
     
@@ -25,11 +27,6 @@ def parse_args():
     
     parser.add_argument('--model_path', type=str, default='models/enhanced_model_final.pt',
                         help='Path to saved model (for evaluate and traverse modes)')
-    
-    parser.add_argument('--source_id', type=int, default=None,
-                        help='Source node ID for traversal (if None, will be chosen randomly)')
-    parser.add_argument('--target_id', type=int, default=None,
-                        help='Target node ID for traversal (if None, will be chosen randomly)')
     
     parser.add_argument('--method', type=str, 
                         choices=['parallel_beam', 'bidirectional_guided', 'hierarchical', 
@@ -56,6 +53,9 @@ def parse_args():
     
     parser.add_argument('--gpu', action='store_true',
                         help='Use GPU if available')
+    
+    parser.add_argument('--epochs', type=int, default=10,
+                        help='Random seed for reproducibility')
     
     return parser.parse_args()
 
@@ -101,9 +101,9 @@ def run_training(args, data, device):
         data=data,
         model=model,
         device=device,
-        num_epochs=10,
+        num_epochs=args.epochs,
         batch_size=32,
-        num_train_pairs=1000,
+        num_train_pairs=args.max_nodes//2,
         learning_rate=0.001,
         weight_decay=0.0001,
         validation_split=0.2
@@ -140,7 +140,7 @@ def run_evaluation(args, data, device, model=None):
         data=data,
         device=device,
         max_steps=args.max_steps,
-        num_pairs=10
+        num_pairs=args.max_nodes//10,
     )
 
     return results, summary
