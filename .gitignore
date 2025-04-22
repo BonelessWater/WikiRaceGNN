@@ -1,8 +1,15 @@
-venv
-__pycache__
+### Environment configuration files
+# pip
+venv              
+# poetry
 poetry.lock
+# conda
 environment.yml
+
+# Cache files
+__pycache__
+
+# Core GNN files produced by the pipeliner
 *pt
 data/*
 plots/*
-uploads/

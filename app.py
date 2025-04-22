@@ -1,35 +1,20 @@
 import os
 import torch
-import numpy as np
 import random
-import json
 import time
 import sys
 import networkx as nx
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from werkzeug.utils import secure_filename
 from collections import deque
-import traceback # Import traceback for better error logging
-import signal # For timeouts (optional but good for long calculations)
+import traceback
 
-# --- Import project modules ---
-# Ensure these paths are correct relative to where you run app.py
-try:
-    from models.graphsage import WikiGraphSAGE
-    from traversal.unified import GraphTraverser
-    from utils.data import load_graph_data_no_pandas as load_graph_data
-    # Local BFS implementation handles history needed for visualization
-except ImportError as e:
-    print(f"--- ImportError ---")
-    print(f"Failed to import project modules: {e}")
-    print("Current working directory:", os.getcwd())
-    print("Python path:", sys.path)
-    print("Please ensure 'models', 'traversal', and 'utils' directories are accessible.")
-    print("-------------------")
-    sys.exit(1)
+from models.graphsage import WikiGraphSAGE
+from traversal.unified import GraphTraverser
+from utils.data import load_graph_data_no_pandas as load_graph_data
 
 # --- Flask App Setup ---
-app = Flask(__name__, template_folder='templates', static_folder='static')
+app = Flask(__name__, template_folder='static/html', static_folder='static')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'default_secret_key_change_me_!@#') # Use env var or default
@@ -170,7 +155,7 @@ def index():
             if node_count >= max_dropdown_nodes:
                 if node_count == max_dropdown_nodes: print(f"Warning: Limiting node dropdown to {max_dropdown_nodes}.")
                 node_count += 1; continue
-            nodes.append({'id': str(original_id), 'title': node_titles.get(idx, f"Node {original_id}")})
+            nodes.append({'id': str(original_id), 'title': node_titles.get(idx, f"{original_id}")})
             node_count += 1
         try: nodes.sort(key=lambda x: x['title'])
         except Exception as e: print(f"Warning: Could not sort nodes: {e}")
@@ -361,7 +346,7 @@ def traverse():
     # --- Prepare Response Data ---
     try: # Wrap response prep in try-except
         def get_path_node_info(node_id_list_str):
-            info = []; [info.append({'id': id_str, 'title': node_titles.get(node_mapping.get(id_str), f"Node {id_str}"), 'url': node_urls.get(node_mapping.get(id_str))}) for id_str in node_id_list_str if id_str in node_mapping]; return info
+            info = []; [info.append({'id': id_str, 'title': node_titles.get(node_mapping.get(id_str), f"{id_str}"), 'url': node_urls.get(node_mapping.get(id_str))}) for id_str in node_id_list_str if id_str in node_mapping]; return info
         gnn_path_info = get_path_node_info(gnn_path_ids)
         bfs_path_indices_str = [str(reverse_mapping.get(idx)) for idx in bfs_path_indices if reverse_mapping.get(idx) is not None]
         bfs_path_info = get_path_node_info(bfs_path_indices_str)
@@ -406,7 +391,6 @@ def traverse():
         return jsonify({'error': f'Failed to prepare response: {str(e_final)}'}), 500
 
 
-# --- Other Routes (/config, /random_nodes, /node_info - Using safe access) ---
 @app.route('/config', methods=['POST'])
 def update_config():
     global config, graph_data, model, traverser, graph_nx, graph_layout
@@ -450,16 +434,16 @@ def get_random_nodes():
         if min_len <= path_len <= max_len:
             source_id_str = str(reverse_mapping.get(source_idx))
             target_id_str = str(reverse_mapping.get(target_idx))
-            source_title = node_titles.get(source_idx, f"Node {source_id_str}")
-            target_title = node_titles.get(target_idx, f"Node {target_id_str}")
+            source_title = node_titles.get(source_idx, f"{source_id_str}")
+            target_title = node_titles.get(target_idx, f"{target_id_str}")
             print(f"Found random pair: {source_title} -> {target_title} (BFS Len: {path_len})")
             return jsonify({'source_id': source_id_str, 'target_id': target_id_str, 'expected_path_length': path_len})
     print(f"Could not find suitable random pair after {max_attempts} attempts.")
     source_idx, target_idx = random.sample(all_indices, 2) # Fallback
     source_id_str = str(reverse_mapping.get(source_idx))
     target_id_str = str(reverse_mapping.get(target_idx))
-    source_title = node_titles.get(source_idx, f"Node {source_id_str}")
-    target_title = node_titles.get(target_idx, f"Node {target_id_str}")
+    source_title = node_titles.get(source_idx, f"{source_id_str}")
+    target_title = node_titles.get(target_idx, f"{target_id_str}")
     return jsonify({'source_id': source_id_str, 'target_id': target_id_str, 'expected_path_length': 'Unknown'})
 
 
@@ -475,11 +459,11 @@ def node_info():
     if not node_id_str: return jsonify({'error': 'No node ID provided.'}), 400
     if node_id_str not in node_mapping: return jsonify({'error': f'Node ID "{node_id_str}" not found.'}), 404
     node_idx = node_mapping[node_id_str]
-    title = node_titles.get(node_idx, f"Node {node_id_str}"); url = node_urls.get(node_idx)
+    title = node_titles.get(node_idx, f"{node_id_str}"); url = node_urls.get(node_idx)
     neighbors_info = []; neighbor_indices = adj_list.get(node_idx, []); neighbor_count = len(neighbor_indices)
     for neighbor_idx in neighbor_indices[:50]:
         neighbor_id = reverse_mapping.get(neighbor_idx)
-        if neighbor_id is not None: neighbors_info.append({'id': str(neighbor_id), 'title': node_titles.get(neighbor_idx, f"Node {str(neighbor_id)}")})
+        if neighbor_id is not None: neighbors_info.append({'id': str(neighbor_id), 'title': node_titles.get(neighbor_idx, f"{str(neighbor_id)}")})
     neighbors_info.sort(key=lambda x: x['title'])
     centrality_metrics = {}
     if graph_nx is not None and node_idx in graph_nx:
@@ -493,5 +477,4 @@ if __name__ == '__main__':
     print("Starting Flask application initialization...")
     if not init_model(): sys.exit(1) # Exit if init fails
     print("--- Starting Flask Development Server ---")
-    # Make accessible on local network by default
-    app.run(host='0.0.0.0', port=5000, debug=True) # Turn debug=False for production
+    app.run(host='0.0.0.0', port=5000, debug=True)
