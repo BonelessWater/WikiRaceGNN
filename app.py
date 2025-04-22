@@ -4,15 +4,17 @@ import numpy as np
 import random
 import json
 import time
+import sys
 import networkx as nx
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from werkzeug.utils import secure_filename
 from collections import deque
 
+
 # Import project modules
 from models import WikiGraphSAGE
 from traversal import GraphTraverser
-from utils import load_graph_data
+from utils.data import load_graph_data_no_pandas as load_graph_data
 from traversal.utils import bidirectional_bfs
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -543,8 +545,21 @@ def update_config():
         return redirect(url_for('index'))
     else:
         return render_template('error.html', error="Failed to initialize model with new configuration.")
+    
 
-(50):  # Try several times
+@app.route('/random_nodes', methods=['GET'])
+def get_random_nodes():
+    """Get a random pair of nodes with a path between them"""
+    global graph_data
+    
+    if graph_data is None:
+        return jsonify({'error': 'Model not initialized'}), 500
+    
+    # Get all nodes
+    all_nodes = list(range(graph_data.x.size(0)))
+    
+    # Try to find a suitable pair of nodes
+    for _ in range(50):  
         source_idx = random.choice(all_nodes)
         target_idx = random.choice(all_nodes)
         
