@@ -533,26 +533,3 @@ def create_wiki_edge_list(output_dir="data", max_nodes=5000, use_word2vec=True):
     # Return the path to the edge list
     edge_list_path = os.path.join(output_dir, "wiki_edges.csv")
     return edge_list_path
-
-
-# Example usage
-if __name__ == "__main__":
-    print("Creating Wikipedia graph dataset with Word2Vec embeddings...")
-    
-    # Check if Gensim is available
-    if not GENSIM_AVAILABLE:
-        print("Warning: Gensim not available. Will use random embeddings instead.")
-        print("Install Gensim with: pip install gensim")
-        use_word2vec = False
-    else:
-        use_word2vec = True
-    
-    # Get edge list path
-    edge_list_path = create_wiki_edge_list(
-        output_dir="data",
-        max_nodes=1000,  # Start with 1000 nodes for testing
-        use_word2vec=use_word2vec
-    )
-    
-    print(f"Edge list created at: {edge_list_path}")
-

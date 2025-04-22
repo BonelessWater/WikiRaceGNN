@@ -66,7 +66,7 @@ def test_traversers(data, device, max_steps=100, num_pairs=10):
     standard_model.eval()
 
     # Create traverser
-    standardTraverser = GraphTraverser(
+    GraphNeuralNetworkTraverser = GraphTraverser(
         standard_model, 
         data, 
         device, 
@@ -80,7 +80,7 @@ def test_traversers(data, device, max_steps=100, num_pairs=10):
     # Define algorithms to compare
     algorithms = {
         "BidirectionalBFS": lambda s, t, max_steps: bidirectional_bfs_wrapper(data, s, t, max_steps),
-        "standardTraverser": lambda s, t, max_steps: standardTraverser.traverse(s, t, max_steps),
+        "GraphNeuralNetworkTraverser": lambda s, t, max_steps: GraphNeuralNetworkTraverser.traverse(s, t, max_steps),
     } 
     
     # Generate test pairs with different path difficulties

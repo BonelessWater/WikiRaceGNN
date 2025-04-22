@@ -222,75 +222,7 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
         data.node_urls = node_urls
     
     return data
-
-def initialize_word2vec_model(data, output_dir="data", feature_dim=64):
-    """
-    Initialize a Word2Vec model for a graph.
-    
-    Args:
-        data: Graph data object
-        output_dir: Directory to save the model
-        feature_dim: Dimension of word vectors
-        
-    Returns:
-        Word2Vec model
-    """
-    # Check if we have titles
-    if not hasattr(data, 'node_titles'):
-        print("No node titles available. Cannot train Word2Vec model.")
-        return None
-    
-    try:
-        from gensim.models import Word2Vec
-        from gensim.models.phrases import Phrases, Phraser
-        from gensim.utils import simple_preprocess
-    except ImportError:
-        print("Gensim not installed. Cannot train Word2Vec model.")
-        return None
-    
-    # Collect and preprocess titles
-    print("Preprocessing node titles for Word2Vec...")
-    preprocessed_titles = []
-    
-    for _, title in data.node_titles.items():
-        # Preprocess title
-        tokens = simple_preprocess(title.replace("_", " "), deacc=True)
-        if tokens:
-            preprocessed_titles.append(tokens)
-    
-    if not preprocessed_titles:
-        print("No valid titles for Word2Vec training.")
-        return None
-    
-    # Train Phrases model (for bigrams)
-    print("Building phrases (bigrams)...")
-    phrases = Phrases(preprocessed_titles, min_count=5, threshold=10)
-    bigram = Phraser(phrases)
-    
-    # Apply bigram model
-    preprocessed_titles = [bigram[title] for title in preprocessed_titles]
-    
-    # Train Word2Vec model
-    print("Training Word2Vec model...")
-    word2vec_model = Word2Vec(
-        sentences=preprocessed_titles,
-        vector_size=feature_dim,
-        window=5,
-        min_count=1,  # We want embeddings for all words in titles
-        workers=4,
-        sg=1,  # Skip-gram model
-        epochs=10
-    )
-    
-    # Save model
-    os.makedirs(output_dir, exist_ok=True)
-    model_path = os.path.join(output_dir, "word2vec_model")
-    word2vec_model.save(model_path)
-    print(f"Word2Vec model trained with {len(word2vec_model.wv)} word vectors")
-    print(f"Saved model to {model_path}")
-    
-    return word2vec_model
-      
+   
 def neighbor_sampler(nodes, edge_index, num_hops=2, num_neighbors=10):
     """
     Sample neighbors for a batch of nodes.

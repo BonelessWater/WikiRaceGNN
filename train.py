@@ -5,19 +5,16 @@ import os
 import random
 from tqdm import tqdm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from sklearn.preprocessing import StandardScaler
 from torch.cuda.amp import autocast, GradScaler
 from gensim.models import Word2Vec
-from gensim.utils import simple_preprocess
 
 from models import WikiGraphSAGE
 from utils import (
     load_graph_data, 
     neighbor_sampler, 
-    initialize_word2vec_model
 )
 from traversal.utils import bidirectional_bfs
-from traversal import Word2VecEnhancedTraverser
+from traversal import GraphTraverser
 
 def train_path_predictor(data, model, device, num_epochs=50, batch_size=32, 
                          num_train_pairs=10000, learning_rate=0.001, 
@@ -442,9 +439,8 @@ def main():
     model = model.to(device)
     model.eval()  # Set to evaluation mode
     
-    # Create our Word2Vec-enhanced traverser
-    print("Creating Word2Vec-enhanced traverser...")
-    traverser = Word2VecEnhancedTraverser(
+    print("Creating traverser...")
+    traverser = GraphTraverser(
         model, data, device,
         beam_width=5,
         heuristic_weight=1.5,
