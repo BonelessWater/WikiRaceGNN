@@ -1,4 +1,3 @@
-```markdown
 # Enhanced Wikipedia Graph Traversal
 
 This project implements advanced graph traversal algorithms designed for navigating large, complex graphs like Wikipedia. It leverages Graph Neural Networks (GraphSAGE) alongside sophisticated search strategies (Beam Search, Bidirectional Guided Search) to significantly reduce node exploration compared to traditional methods like Breadth-First Search (BFS), while still finding optimal or near-optimal paths. The project includes data generation, model training, evaluation scripts, and an interactive web dashboard for visualization and comparison.
@@ -19,6 +18,13 @@ This project implements advanced graph traversal algorithms designed for navigat
 -   Python 3.11 (as specified in `pyproject.toml`)
 -   [Poetry](https://python-poetry.org/docs/#installation) for dependency management
 -   A compatible CUDA setup (defaults to CUDA 11.7 in `pyproject.toml`, adjust if needed) or CPU fallback.
+
+## Disclaimer to Grader
+
+This code base has MANY moving parts. If issues do arise, feel free to contact the owner of the repository.
+For quick testing, refer to the Pipeline command which will run all necessary components in one go and set
+--max_nodes to 1000 or less. If you choose to increase this number, be sure to have stable internet connection
+and a fast computer
 
 ## Installation
 
@@ -87,34 +93,34 @@ poetry run python main.py --mode evaluate --num_pairs 100
 
 This is the primary way to interactively explore and visualize graph traversals.
 
-**1. Prerequisites:**
-    *   Ensure you have generated the necessary graph data files (e.g., using `main.py --mode data`) and they are located where `app.py` expects them (typically the `data/` directory). Check the `config` dictionary within `app.py` for the `edge_file` path used during initialization (even though it loads processed data, the config points to the original source).
-    *   Ensure you have a trained model file (e.g., from `main.py --mode train` or a pre-trained one) located where `app.py` expects it (default: `models/enhanced_model_final.pt`).
+**1. Prerequisites:**  
+-   Ensure you have generated the necessary graph data files (e.g., using `main.py --mode data`) and they are located where `app.py` expects them (typically the `data/` directory). Check the `config` dictionary within `app.py` for the `edge_file` path used during initialization (even though it loads processed data, the config points to the original source).
+-   Ensure you have a trained model file (e.g., from `main.py --mode train` or a pre-trained one) located where `app.py` expects it (default: `models/enhanced_model_final.pt`).
 
 **2. Launch the Dashboard:**
-    *   From the root directory of the project (`WikiRaceGNN/`), run the following command in your terminal:
+-   From the root directory of the project (`WikiRaceGNN/`), run the following command in your terminal:
         ```bash
         poetry run python app.py
         ```
-    *   The application will start, initialize the model and data (you'll see logs in the terminal), and then typically listen on `http://0.0.0.0:5000/` or `http://127.0.0.1:5000/`.
+-   The application will start, initialize the model and data (you'll see logs in the terminal), and then typically listen on `http://0.0.0.0:5000/` or `http://127.0.0.1:5000/`.
 
 **3. Access in Browser:**
-    *   Open your web browser (Chrome, Firefox, Edge, etc.).
-    *   Navigate to the address shown in the terminal, usually `http://localhost:5000` or `http://127.0.0.1:5000`.
+-   Open your web browser (Chrome, Firefox, Edge, etc.).
+-   Navigate to the address shown in the terminal, usually `http://localhost:5000` or `http://127.0.0.1:5000`.
 
 **4. Using the Dashboard:**
-    *   **Select Nodes**: Use the "Source Node" and "Target Node" dropdowns to choose your starting and ending Wikipedia pages. You can type in the dropdowns to search if your browser supports it, or use the "Get Random Pair" button.
-    *   **Choose Method**: Select a GNN traversal strategy from the "Traversal Method" dropdown (`auto` is recommended).
-    *   **Set Parameters**: Adjust "Max Steps", "Beam Width", and "Heuristic Weight" as needed for the selected algorithm.
-    *   **Run Traversal**: Click the "Find Path" button. The application will run the selected GNN method and a baseline BFS search.
-    *   **View Results**:
-        *   **Statistics**: The panel below the controls will populate with metrics comparing the GNN method vs. BFS (path lengths, nodes explored, time, efficiency).
-        *   **Path Lists**: The GNN and BFS paths found will be displayed as ordered lists of nodes. Click the <i class="bi bi-box-arrow-up-right"></i> icon to visit the Wikipedia page (if URL exists) or the <i class="bi bi-info-circle"></i> icon to view node details.
-        *   **Graph Visualization**: The main panel shows the graph structure around the found paths. Nodes and links are colored according to the legend. You can zoom (scroll wheel) and pan (click and drag). Hover over nodes for titles, click nodes to view details.
-    *   **Animation**:
-        *   Ensure the "Show Animation" switch is enabled *before* clicking "Find Path" if you want to see the step-by-step process.
-        *   Use the Play/Pause, Next Step, and Previous Step buttons below the visualization to control the animation playback. The progress bar shows the current step.
-    *   **Configuration**: Click the "Configuration" link in the top navbar to open a modal where you can change settings like the maximum number of nodes loaded, file paths, or visualization options. **Note:** Saving changes here will typically require restarting the `app.py` process for them to take full effect (especially data/model path changes).
+-   **Select Nodes**: Use the "Source Node" and "Target Node" dropdowns to choose your starting and ending Wikipedia pages. You can type in the dropdowns to search if your browser supports it, or use the "Get Random Pair" button.
+-   **Choose Method**: Select a GNN traversal strategy from the "Traversal Method" dropdown (`auto` is recommended).
+-   **Set Parameters**: Adjust "Max Steps", "Beam Width", and "Heuristic Weight" as needed for the selected algorithm.
+-   **Run Traversal**: Click the "Find Path" button. The application will run the selected GNN method and a baseline BFS search.
+-   **View Results**:
+    -   **Statistics**: The panel below the controls will populate with metrics comparing the GNN method vs. BFS (path lengths, nodes explored, time, efficiency).
+    -   **Path Lists**: The GNN and BFS paths found will be displayed as ordered lists of nodes. Click the <i class="bi bi-box-arrow-up-right"></i> icon to visit the Wikipedia page (if URL exists) or the <i class="bi bi-info-circle"></i> icon to view node details.
+    -   **Graph Visualization**: The main panel shows the graph structure around the found paths. Nodes and links are colored according to the legend. You can zoom (scroll wheel) and pan (click and drag). Hover over nodes for titles, click nodes to view details.
+    -   **Animation**:
+        -   Ensure the "Show Animation" switch is enabled *before* clicking "Find Path" if you want to see the step-by-step process.
+        -   Use the Play/Pause, Next Step, and Previous Step buttons below the visualization to control the animation playback. The progress bar shows the current step.
+    -   **Configuration**: Click the "Configuration" link in the top navbar to open a modal where you can change settings like the maximum number of nodes loaded, file paths, or visualization options. **Note:** Saving changes here will typically require restarting the `app.py` process for them to take full effect (especially data/model path changes).
 
 ## Command Line Arguments (`main.py`)
 
@@ -228,10 +234,6 @@ The project offers two main visualization modes:
 1.  **Static Plots (`main.py --mode evaluate --visualize`)**: When running evaluation via `main.py`, enabling the `--visualize` flag generates static plots saved to the `plots/` directory. These typically include performance comparisons and analysis charts.
 2.  **Interactive Web Dashboard (`app.py`)**: Running `app.py` provides the real-time visualization interface described in the "Interactive Dashboard" and "Using the Dashboard" sections, allowing dynamic exploration of specific traversals.
 
-## License
-
-This project is licensed under the MIT License - see the `LICENSE` file for details (if one exists, otherwise assumed MIT based on common practice).
-
 ## Troubleshooting
 
 ### Dependency/Installation Issues
@@ -258,4 +260,3 @@ If you encounter dependency issues with Poetry:
 -   **Animation Not Working**:
     -   Make sure the "Show Animation" toggle is checked *before* running the traversal.
     -   Verify that the backend (`app.py` / `traversal/unified.py`) is correctly generating and returning the `bfs_exploration_history` and `gnn_exploration_history` data when requested. Check the `/traverse` response in the Network tab.
-```
