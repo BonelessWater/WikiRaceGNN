@@ -9,10 +9,100 @@ This project implements an advanced graph traversal algorithm that outperforms t
 - **Memory Efficient**: Selective caching and pruning for optimal memory usage
 - **Adaptable**: Automatically selects the best traversal method based on graph properties
 
+## Prerequisites
+
+- Python 3.11 (required by the Poetry configuration)
+- [Poetry](https://python-poetry.org/docs/#installation) for dependency management
+
+## Installation
+
+### Step 1: Clone the repository
+
+```bash
+git clone https://github.com/BonelessWater/WikiRaceGNN
+cd WikiRaceGNN
+```
+
+### Step 2: Set up the Poetry environment
+
+```bash
+# Install Poetry if you haven't already
+# curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies using Poetry
+poetry install
+```
+
+**Note**: The project uses CUDA 11.7. If you have a different CUDA version, you might need to modify the `pyproject.toml` file accordingly.
+
+## Usage
+
+The system provides several modes of operation:
+
+### Full Pipeline
+
+Run the complete pipeline (data generation, training, evaluation, and sample traversal). Run this command for immediate testing of the codebase:
+
+```bash
+poetry run python main.py --mode pipeline --max_nodes 1000 --epochs 10
+```
+
+### Data Generation
+
+Generate a Wikipedia-like graph dataset:
+
+```bash
+poetry run python main.py --mode data --max_nodes 1000
+```
+
+### Training
+
+Train the GraphSAGE model:
+
+```bash
+poetry run python main.py --mode train
+```
+
+### Evaluation
+
+Evaluate different traversal algorithms:
+
+```bash
+poetry run python main.py --mode evaluate
+```
+
+## Command Line Arguments
+
+- `--edge_file`: Path to edge list CSV file (default: 'data/wiki_edges.csv')
+- `--max_nodes`: Maximum number of nodes to include in the graph (default: 1000)
+- `--feature_dim`: Dimension of node features (default: 64)
+- `--mode`: Operation mode ('data', 'train', 'evaluate', 'traverse', or 'pipeline')
+- `--model_path`: Path to saved model (default: 'models/enhanced_model_final.pt')
+- `--method`: Traversal method ('parallel_beam', 'bidirectional_guided', 'hybrid', or 'auto')
+- `--max_steps`: Maximum steps for traversal (default: 30)
+- `--num_neighbors`: Number of neighbors to sample in each step (default: 20)
+- `--beam_width`: Beam width for beam search (default: 5)
+- `--heuristic_weight`: Weight for heuristic component in A* search (default: 1.5)
+- `--visualize`: Enable visualization of traversal results
+- `--seed`: Random seed for reproducibility (default: 42)
+- `--gpu`: Use GPU if available
+- `--epochs`: Number of training epochs (default: 10)
+
+## Traversal Methods
+
+The system supports several traversal methods:
+
+1. **Parallel Beam Search (`parallel_beam`)**: Maintains multiple candidate paths and expands them in parallel
+2. **Bidirectional Guided Search (`bidirectional_guided`)**: A* search from both ends with GNN guidance
+3. **Hybrid (`hybrid`)**: Attempts parallel beam search first, then falls back to bidirectional search if needed
+4. **Auto (`auto`)**: Automatically selects the best method based on estimated distance between nodes
+
 ## Project Structure
 
 ```
 wiki_traversal/
+|
+├── data/                      # Edge list, adjacency list and embeddings
 │
 ├── models/                    # Neural network models
 │   ├── __init__.py
@@ -29,119 +119,43 @@ wiki_traversal/
 │   ├── __init__.py
 │   ├── data.py                # Data loading and preprocessing
 │   ├── visualization.py       # Visualization utilities
+│   ├── crawler.py             # Wikipedia data crawler
+│   ├── wikibuilder.py         # Wikipedia graph builder
 │   └── evaluation.py          # Evaluation metrics
 │
 ├── train.py                   # Training script
 ├── evaluate.py                # Evaluation script
 ├── main.py                    # Main entry point
+├── pyproject.toml             # Poetry configuration
 └── README.md                  # This file
 ```
 
-## Installation
+## Data Generation
 
-### Prerequisites
-
-- Python 3.8+
-- PyTorch 1.8+
-- PyTorch Geometric 2.0+
-
-### Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/wiki-traversal.git
-   cd wiki-traversal
-   ```
-
-2. Create a virtual environment and install dependencies:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. Create the necessary directories:
-   ```bash
-   mkdir -p data models plots
-   ```
-
-## Usage
-
-### Data Preparation
-
-Place your edge list CSV file in the `data/` directory. The file should have two columns (`id1` and `id2`) representing directed edges from `id1` to `id2`.
-
-If no data file is provided, the system will automatically generate a sample graph for testing.
-
-### Training
-
-Train the GraphSAGE model:
-
-```bash
-python main.py --mode train --edge_file data/your_edges.csv
-```
-
-### Evaluation
-
-Evaluate different traversal algorithms:
-
-```bash
-python main.py --mode evaluate --edge_file data/your_edges.csv
-```
-
-### Traversal
-
-Run traversal between specific nodes:
-
-```bash
-python main.py --mode traverse --edge_file data/your_edges.csv --source_id 1234 --target_id 5678
-```
-
-### Command Line Arguments
-
-- `--edge_file`: Path to edge list CSV file
-- `--max_nodes`: Maximum number of nodes to include in the graph
-- `--feature_dim`: Dimension of node features
-- `--mode`: Operation mode (`train`, `evaluate`, or `traverse`)
-- `--model_path`: Path to saved model
-- `--source_id`: Source node ID for traversal
-- `--target_id`: Target node ID for traversal
-- `--method`: Traversal method (`parallel_beam`, `bidirectional_guided`, `hybrid`, or `auto`)
-- `--max_steps`: Maximum steps for traversal
-- `--num_neighbors`: Number of neighbors to sample in each step
-- `--beam_width`: Beam width for beam search
-- `--heuristic_weight`: Weight for heuristic component in A* search
-- `--visualize`: Visualize the traversal results
-- `--seed`: Random seed for reproducibility
-- `--gpu`: Use GPU if available
-
-## Traversal Methods
-
-1. **Parallel Beam Search (`parallel_beam`)**: Maintains multiple candidate paths and expands them in parallel
-2. **Bidirectional Guided Search (`bidirectional_guided`)**: A* search from both ends with GNN guidance
-3. **Hybrid (`hybrid`)**: Attempts parallel beam search first, then falls back to bidirectional search if needed
-4. **Auto (`auto`)**: Automatically selects the best method based on estimated distance between nodes
-
-## Performance
-
-The enhanced algorithms typically demonstrate:
-- 30-70% reduction in nodes explored compared to BFS
-- Higher success rates, especially for longer paths
-- 20-50% faster execution time
-- Excellent scaling with increasing graph size
+The generation process uses Word2Vec for creating node embeddings based on page titles.
 
 ## Visualization
 
-When using `--visualize` flag, the system generates visualizations in the `plots/` directory:
+When using the `--visualize` flag, the system generates several visualizations in the `plots/` directory:
 - Path comparisons between different algorithms
 - Node exploration patterns
 - Efficiency metrics
+- Graph structure visualization
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgments
+## Troubleshooting
 
-- PyTorch Geometric team for the graph neural network framework
-- The research community for advancements in graph neural networks and efficient traversal algorithms
+### Dependency Issues
+
+If you encounter dependency issues with Poetry:
+
+1. Try updating Poetry: `poetry self update`
+2. Clear Poetry's cache: `poetry cache clear --all pypi`
+3. Remove the virtual environment and recreate it: 
+   ```bash
+   rm -rf $(poetry env info --path)
+   poetry install
+   ```
