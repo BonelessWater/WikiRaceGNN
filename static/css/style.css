@@ -1,0 +1,162 @@
+/* General Layout & Spacing */
+body {
+    padding-top: 1rem; /* Add some padding if using a fixed navbar in base.html */
+}
+
+.card-header h5, .card-header h6 {
+    margin-bottom: 0; /* Remove default margin for card headers */
+}
+
+.form-label {
+    font-size: 0.875rem; /* Slightly smaller form labels */
+    margin-bottom: 0.25rem;
+}
+
+hr {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Control Panel Specific */
+.sticky-top {
+    /* Ensure sticky positioning works as expected */
+    z-index: 1020; /* Adjust if needed based on other elements */
+}
+
+/* Path List Container */
+.path-container {
+    max-height: 300px; /* Limit height */
+    overflow-y: auto; /* Enable vertical scroll */
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+}
+.path-container .list-group-item {
+    padding: 0.5rem 0.75rem; /* Adjust padding */
+    font-size: 0.9rem; /* Slightly smaller text */
+}
+.path-container .list-group-item strong { /* Step number */
+    min-width: 25px;
+    display: inline-block;
+}
+
+/* Graph Visualization Area */
+#graphVisualization {
+    min-height: 550px; /* Minimum height */
+    height: 70vh; /* Use viewport height for flexibility */
+    width: 100%;
+    background-color: #f8f9fa; /* Light background */
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    position: relative; /* For positioning internal elements like SVG */
+    overflow: hidden; /* Clip SVG if it overflows */
+}
+
+#graphVisualization svg {
+    display: block; /* Remove extra space below SVG */
+    width: 100%;
+    height: 100%;
+    min-height: inherit; /* Inherit min-height from container */
+}
+
+/* D3 Basic Element Styles */
+.node {
+    stroke: #333; /* Darker stroke */
+    stroke-width: 1px;
+    cursor: pointer;
+    transition: transform 0.1s ease-out, filter 0.1s ease-out;
+}
+.node:hover {
+   stroke-width: 2.5px;
+   stroke: #000;
+   /* filter: brightness(1.2); Optional brightness effect */
+}
+
+.link {
+    stroke: #AEAEAE; /* Default link color */
+    stroke-opacity: 0.6;
+    transition: stroke 0.2s ease, stroke-opacity 0.2s ease;
+}
+.link.highlight { /* For highlighting neighbors */
+    stroke: #555;
+    stroke-opacity: 1;
+    stroke-width: 2px;
+}
+
+/* D3 Specific Path/Frontier Links (Add colors/widths based on JS logic later) */
+.link.traversed-link { stroke: #ADD8E6; stroke-width: 1.5px; }
+.link.gnn_path-link { stroke: #2E8B57; stroke-width: 2.5px; }
+.link.bfs_path-link { stroke: #dc3545; stroke-width: 2.5px; }
+.link.both_path-link { stroke: #6f42c1; stroke-width: 3px; }
+
+/* D3 Labels */
+.node-label {
+    font-size: 10px;
+    font-weight: bold;
+    fill: #333;
+    pointer-events: none; /* Prevent labels interfering with node clicks */
+    /* Text anchor can be set in JS if needed */
+}
+
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    border-radius: 4px;
+    pointer-events: none; /* VERY IMPORTANT */
+    font-size: 0.8rem; /* Smaller tooltip text */
+    z-index: 1050; /* Ensure tooltip is on top */
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* Legend Styles */
+.legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+.legend-line {
+    display: inline-block;
+    width: 18px;
+    height: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border-radius: 2px;
+}
+.card-body.small .row .col-md-4, .card-body.small .row .col-6 {
+    padding-right: 5px; /* Reduce padding in legend */
+    padding-left: 5px;
+}
+
+/* Animation Controls */
+#animationProgress { height: 6px; }
+#animationControls { font-size: 0.85rem; }
+#animationControls .btn { padding: 0.15rem 0.4rem; font-size: 0.8rem; }
+
+/* Small Buttons (e.g., Node Info in path list) */
+.node-info-btn, .node-link-btn {
+    padding: 0.1rem 0.3rem;
+    font-size: 0.8em;
+    line-height: 1;
+    margin-left: 5px;
+    vertical-align: middle; /* Align better with text */
+}
+
+/* Table Alignment */
+table th, table td {
+    vertical-align: middle;
+}
+
+/* Modal tweaks */
+#nodeInfoModal .table th {
+    width: 100px; /* Consistent width for property names */
+}
+#nodeInfoModal .list-group-item {
+    font-size: 0.9rem;
+}

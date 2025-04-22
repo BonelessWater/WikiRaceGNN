@@ -1,1302 +1,298 @@
-{% extends "base.html" %} {# Assumes you have a base.html this extends #}
+{% extends "base.html" %} {# Assumes you have a base.html providing Bootstrap JS/CSS #}
 
 {% block title %}Enhanced Wikipedia Graph Traversal{% endblock %}
 
-{% block content %} {# Assumes the main content block is named 'content' in base.html #}
-<div class="row">
-    <div class="col-md-3">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h3>Control Panel</h3>
-            </div>
-            <div class="card-body">
-                <div class="form-group mb-3">
-                    <label for="sourceNode">Source Node:</label>
-                    <div class="input-group">
-                        <select class="form-select" id="sourceNode">
+{% block extra_css %}
+    {# Link Bootstrap Icons #}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    {# Link the new external CSS file #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3"> {# Added container-fluid for better spacing #}
+    <div class="row">
+        {# Control Panel (col-md-3) #}
+        <div class="col-lg-3 col-md-4"> {# Adjusted column size for responsiveness #}
+            <div class="card mb-4 sticky-top" style="top: 1rem;"> {# Make control panel sticky #}
+                <div class="card-header">
+                    <h5 class="mb-0">Control Panel</h5> {# Use h5 for card headers #}
+                </div>
+                <div class="card-body">
+                    {# Source Node #}
+                    <div class="mb-3"> {# Use mb-3 for spacing instead of form-group #}
+                        <label for="sourceNode" class="form-label">Source Node:</label> {# Use form-label class #}
+                        <select class="form-select form-select-sm" id="sourceNode"> {# Smaller select #}
                             <option value="">Select a source node</option>
                             {% for node in nodes %}
                             <option value="{{ node.id }}">{{ node.title }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                </div>
 
-                <div class="form-group mb-3">
-                    <label for="targetNode">Target Node:</label>
-                    <div class="input-group">
-                        <select class="form-select" id="targetNode">
+                    {# Target Node #}
+                    <div class="mb-3">
+                        <label for="targetNode" class="form-label">Target Node:</label>
+                        <select class="form-select form-select-sm" id="targetNode">
                             <option value="">Select a target node</option>
                             {% for node in nodes %}
                             <option value="{{ node.id }}">{{ node.title }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                </div>
 
-                <button class="btn btn-outline-secondary w-100 mb-3" type="button" id="randomPairBtn">Get Random Pair</button>
+                    {# Random Pair Button #}
+                    <button class="btn btn-sm btn-outline-secondary w-100 mb-3" type="button" id="randomPairBtn">Get Random Pair</button>
 
-                <hr>
+                    <hr>
 
-                <div class="form-group mb-3">
-                    <label for="traversalMethod">Traversal Method:</label>
-                    <select class="form-select" id="traversalMethod">
-                        <option value="auto">Auto (Best Method)</option>
-                        <option value="beam">Beam Search (GNN)</option>
-                        {# Make sure the value matches the one expected by your Flask backend if different #}
-                        <option value="bidirectional_guided">Bidirectional Search (GNN)</option>
-                        <option value="hybrid">Hybrid Search (GNN)</option>
-                    </select>
-                </div>
+                    {# Traversal Method #}
+                    <div class="mb-3">
+                        <label for="traversalMethod" class="form-label">Traversal Method:</label>
+                        <select class="form-select form-select-sm" id="traversalMethod">
+                            <option value="auto">Auto (Recommended)</option>
+                            <option value="parallel_beam">Parallel Beam (GNN)</option>
+                            <option value="bidirectional_guided">Bidirectional Guided (GNN)</option>
+                            <option value="hybrid">Hybrid (GNN)</option>
+                            {# Add other methods if backend supports them, e.g., 'bfs' #}
+                        </select>
+                    </div>
 
-                <div class="form-group mb-3">
-                    <label for="maxSteps">Max Steps:</label>
-                    <input type="number" class="form-control" id="maxSteps" value="{{ config.max_steps }}">
-                </div>
+                    {# Algorithm Parameters #}
+                    <div class="row gx-2 mb-3"> {# Use row with gutters for alignment #}
+                        <div class="col-6">
+                            <label for="maxSteps" class="form-label">Max Steps:</label>
+                            <input type="number" class="form-control form-control-sm" id="maxSteps" value="{{ config.max_steps | default(30) }}">
+                        </div>
+                        <div class="col-6">
+                             <label for="beamWidth" class="form-label">Beam Width:</label>
+                            <input type="number" class="form-control form-control-sm" id="beamWidth" value="{{ config.beam_width | default(5) }}" min="1">
+                        </div>
+                         <div class="col-12 mt-2"> {# Heuristic on its own line #}
+                            <label for="heuristicWeight" class="form-label">Heuristic Weight (BiDir):</label>
+                            <input type="number" class="form-control form-control-sm" id="heuristicWeight" value="{{ config.heuristic_weight | default(1.5) }}" min="0.1" step="0.1">
+                        </div>
+                    </div>
 
-                <div class="form-group mb-3">
-                    <label for="beamWidth">Beam Width:</label>
-                    <input type="number" class="form-control" id="beamWidth" value="{{ config.beam_width }}" min="1" max="10">
-                </div>
 
-                <div class="form-group mb-3">
-                    <label for="heuristicWeight">Heuristic Weight:</label>
-                    <input type="number" class="form-control" id="heuristicWeight" value="{{ config.heuristic_weight }}" min="0.1" max="5.0" step="0.1">
-                </div>
+                    {# Find Path Button #}
+                    <button class="btn btn-primary w-100" id="traverseBtn">Find Path</button>
 
-                <button class="btn btn-primary w-100" id="traverseBtn">Find Path</button>
+                    <hr>
 
-                <hr>
+                    {# Statistics Panel #}
+                    <div id="statsContainer" class="mb-3" style="display: none;">
+                        <h6>Statistics</h6> {# Use h6 for subheadings #}
+                        <div class="table-responsive">
+                            <table class="table table-sm caption-top mb-0"> {# Add caption-top #}
+                                <caption class="small text-muted">GNN vs BFS Baseline</caption>
+                                <tbody>
+                                    <tr><th scope="row" style="width:55%;">Nodes (GNN)</th><td id="gnnNodesExplored">-</td></tr>
+                                    <tr><th scope="row">Nodes (BFS)</th><td id="bfsNodesExplored">-</td></tr>
+                                    <tr><th scope="row">Length (GNN)</th><td id="gnnPathLength">-</td></tr>
+                                    <tr><th scope="row">Length (BFS)</th><td id="bfsPathLength">-</td></tr>
+                                    <tr><th scope="row">Time (GNN)</th><td id="gnnTime">-</td></tr>
+                                    <tr><th scope="row">Time (BFS)</th><td id="bfsTime">-</td></tr>
+                                    <tr><th scope="row">Efficiency</th><td id="efficiencyRatio">-</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div> {# End card-body #}
+            </div> {# End card #}
 
-                <div id="statsContainer" class="mb-3" style="display: none;">
-                    <h4>Statistics</h4>
+             {# Graph Properties Panel #}
+            <div class="card mb-4">
+                <div class="card-header"><h5 class="mb-0">Graph Properties</h5></div>
+                <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-sm">
-                            <tbody>
-                                <tr>
-                                    <th>Nodes Explored (GNN)</th>
-                                    <td id="gnnNodesExplored">-</td>
-                                </tr>
-                                <tr>
-                                    <th>Nodes Explored (BFS)</th>
-                                    <td id="bfsNodesExplored">-</td>
-                                </tr>
-                                <tr>
-                                    <th>Path Length (GNN)</th>
-                                    <td id="gnnPathLength">-</td>
-                                </tr>
-                                <tr>
-                                    <th>Path Length (BFS)</th>
-                                    <td id="bfsPathLength">-</td>
-                                </tr>
-                                <tr>
-                                    <th>Time Taken (GNN)</th>
-                                    <td id="gnnTime">-</td>
-                                </tr>
-                                <tr>
-                                    <th>Time Taken (BFS)</th>
-                                    <td id="bfsTime">-</td>
-                                </tr>
-                                <tr>
-                                    <th>Efficiency Ratio</th>
-                                    <td id="efficiencyRatio">-</td>
-                                </tr>
-                            </tbody>
+                        <table class="table table-sm mb-0">
+                             <tbody>
+                                 <tr><th scope="row" style="width:55%;">Nodes</th><td>{{ graph_stats.num_nodes | default('N/A') }}</td></tr>
+                                 <tr><th scope="row">Edges</th><td>{{ graph_stats.num_edges | default('N/A') }}</td></tr>
+                                 <tr><th scope="row">Avg. Degree</th><td>{{ "%.2f"|format(graph_stats.avg_degree) if graph_stats.avg_degree is number else 'N/A' }}</td></tr>
+                                 {% if graph_stats.density is defined %}<tr><th scope="row">Density</th><td>{{ "%.4f"|format(graph_stats.density) }}</td></tr>{% endif %}
+                                 {% if graph_stats.clustering is defined %}<tr><th scope="row">Clustering</th><td>{{ "%.4f"|format(graph_stats.clustering) }}</td></tr>{% endif %}
+                                 {% if graph_stats.connected_components is defined %}<tr><th scope="row">Components</th><td>{{ graph_stats.connected_components }}</td></tr>{% endif %}
+                                 {% if graph_stats.largest_component_size is defined %}<tr><th scope="row">Largest Comp.</th><td>{{ graph_stats.largest_component_size }} ({{ "%.1f"|format(graph_stats.largest_component_percentage) }}%)</td></tr>{% endif %}
+                                 {% if graph_stats.diameter is defined %}<tr><th scope="row">Diameter</th><td>{{ graph_stats.diameter }}</td></tr>{% endif %}
+                             </tbody>
                         </table>
                     </div>
                 </div>
-            </div>
-        </div>
+            </div> {# End card #}
+        </div> {# End col-md-3 #}
 
-        <div class="card mb-4">
-            <div class="card-header">
-                <h3>Graph Properties</h3>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <tbody>
-                            <tr>
-                                <th>Nodes</th>
-                                <td>{{ graph_stats.num_nodes }}</td>
-                            </tr>
-                            <tr>
-                                <th>Edges</th>
-                                <td>{{ graph_stats.num_edges }}</td>
-                            </tr>
-                            <tr>
-                                <th>Avg. Degree</th>
-                                <td>{{ "%.2f"|format(graph_stats.avg_degree) }}</td>
-                            </tr>
-                            {% if graph_stats.density is defined %}
-                            <tr>
-                                <th>Density</th>
-                                <td>{{ "%.4f"|format(graph_stats.density) }}</td>
-                            </tr>
-                            {% endif %}
-                            {% if graph_stats.clustering is defined %}
-                            <tr>
-                                <th>Clustering</th>
-                                <td>{{ graph_stats.clustering }}</td>
-                            </tr>
-                            {% endif %}
-                            {% if graph_stats.connected_components is defined %}
-                            <tr>
-                                <th>Connected Components</th>
-                                <td>{{ graph_stats.connected_components }}</td>
-                            </tr>
-                            {% endif %}
-                            {% if graph_stats.largest_component_size is defined %}
-                            <tr>
-                                <th>Largest Component</th>
-                                <td>{{ graph_stats.largest_component_size }} ({{ graph_stats.largest_component_percentage }}%)</td>
-                            </tr>
-                            {% endif %}
-                            {% if graph_stats.diameter is defined %}
-                            <tr>
-                                <th>Diameter</th>
-                                <td>{{ graph_stats.diameter }}</td>
-                            </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div> <!-- End of col-md-3 -->
-
-    <div class="col-md-9">
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h3 id="visualizationTitle">Graph Visualization</h3>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="animationToggle" checked>
-                    <label class="form-check-label" for="animationToggle">Show Animation</label>
-                </div>
-            </div>
-            <div class="card-body">
-                <div id="graphVisualization" style="height: 600px; background-color: #f8f9fa; border-radius: 4px;"></div>
-
-                <div class="mt-3">
-                    <div class="progress" id="animationProgress" style="display: none;">
-                        <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+        {# Main Area (col-md-9) #}
+        <div class="col-lg-9 col-md-8"> {# Adjusted column size #}
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="visualizationTitle">Graph Visualization</h5> {# Use h5 #}
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="animationToggle" checked>
+                        <label class="form-check-label small" for="animationToggle">Show Animation</label> {# Smaller label #}
                     </div>
-                    <div class="mt-2 d-flex justify-content-between" id="animationControls" style="display: none;">
-                        <button class="btn btn-sm btn-outline-secondary" id="animationPrevBtn">
-                            <i class="bi bi-chevron-left"></i> Previous
-                        </button>
-                        <div>
-                            <span id="currentStep">Step 0</span> / <span id="totalSteps">0</span>
-                            <button class="btn btn-sm btn-outline-primary mx-2" id="animationPlayBtn">
-                                <i class="bi bi-play-fill"></i> Play
-                            </button>
+                </div>
+                <div class="card-body">
+                    {# Graph Visualization Area #}
+                    <div id="graphVisualization">
+                        {# SVG will be added here by D3 #}
+                    </div>
+                    {# Animation Controls #}
+                    <div class="mt-3">
+                        <div class="progress" id="animationProgress" style="display: none; height: 6px;"> {# Thinner progress bar #}
+                             <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
                         </div>
-                        <button class="btn btn-sm btn-outline-secondary" id="animationNextBtn">
-                            Next <i class="bi bi-chevron-right"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="row mt-4">
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">
-                                <h4>GNN Path</h4>
+                        <div class="mt-2 d-flex justify-content-between align-items-center" id="animationControls" style="display: none;">
+                            <button class="btn btn-sm btn-outline-secondary" id="animationPrevBtn"><i class="bi bi-chevron-left"></i> Prev</button>
+                            <div class="text-center small"> {# Smaller text #}
+                                <span id="currentStep">Step 0</span> / <span id="totalSteps">0</span>
+                                <button class="btn btn-sm btn-outline-primary mx-2" id="animationPlayBtn"><i class="bi bi-play-fill"></i> Play</button>
                             </div>
-                            <div class="card-body p-0">
-                                <div id="gnnPath" class="list-group path-container" style="max-height: 300px; overflow-y: auto;">
-                                    <div class="list-group-item">Select nodes and run traversal to see path</div>
-                                </div>
-                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" id="animationNextBtn">Next <i class="bi bi-chevron-right"></i></button>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">
-                                <h4>BFS Path</h4>
-                            </div>
-                            <div class="card-body p-0">
-                                <div id="bfsPath" class="list-group path-container" style="max-height: 300px; overflow-y: auto;">
-                                    <div class="list-group-item">Select nodes and run traversal to see path</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row mt-4">
-                    <div class="col-md-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h4>Legend</h4>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <ul class="list-group">
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                Source Node
-                                                <span class="badge rounded-circle" style="background-color: #00FF00; width: 20px; height: 20px;"></span>
-                                            </li>
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                Target Node
-                                                <span class="badge rounded-circle" style="background-color: #FF0000; width: 20px; height: 20px;"></span>
-                                            </li>
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                GNN Path Node
-                                                <span class="badge rounded-circle" style="background-color: #198754; width: 20px; height: 20px;"></span>
-                                            </li>
-                                        </ul>
+                    {# Path Display Areas #}
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <div class="card h-100"> {# Use h-100 for equal height #}
+                                <div class="card-header py-2"><h6 class="mb-0">GNN Path (<span id="gnnPathType">Method</span>)</h6></div> {# Use h6 #}
+                                <div class="card-body p-0">
+                                    <div id="gnnPath" class="list-group list-group-flush path-container"> {# Use list-group-flush #}
+                                        <div class="list-group-item text-muted small">Run traversal to see path</div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <ul class="list-group">
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                BFS Path Node
-                                                <span class="badge rounded-circle" style="background-color: #dc3545; width: 20px; height: 20px;"></span>
-                                            </li>
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                Frontier Node (GNN/BFS)
-                                                <span class="badge rounded-circle" style="background-color: #1E90FF; width: 20px; height: 20px;"></span>
-                                            </li>
-                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                Unvisited Node
-                                                <span class="badge rounded-circle" style="background-color: #808080; width: 20px; height: 20px;"></span>
-                                            </li>
-                                        </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header py-2"><h6 class="mb-0">BFS Path</h6></div>
+                                <div class="card-body p-0">
+                                    <div id="bfsPath" class="list-group list-group-flush path-container">
+                                        <div class="list-group-item text-muted small">Run traversal to see path</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div> <!-- End of col-md-9 -->
-</div> <!-- End of row -->
+                    {# Legend #}
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header py-2"><h6 class="mb-0">Legend</h6></div>
+                                <div class="card-body py-2 small"> {# Smaller text in legend #}
+                                    {# Node Legend #}
+                                    <div class="row">
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #00FF00;"></span> Source</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #FF0000;"></span> Target</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #2E8B57;"></span> GNN Path</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #dc3545;"></span> BFS Path</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #6f42c1;"></span> Both Paths</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #1E90FF;"></span> GNN Frontier</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #FFA500;"></span> BFS Frontier</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #800080;"></span> Both Frontiers</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-dot" style="background-color: #808080;"></span> Other Node</div>
+                                    </div>
+                                    <hr class="my-1">
+                                    {# Link Legend #}
+                                    <div class="row">
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-line" style="background-color: #2E8B57;"></span> GNN Link</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-line" style="background-color: #dc3545;"></span> BFS Link</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-line" style="background-color: #6f42c1;"></span> Both Links</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-line" style="background-color: #ADD8E6;"></span> Traversed</div>
+                                        <div class="col-md-4 col-6 mb-1 d-flex align-items-center"><span class="legend-line" style="background-color: #D3D3D3;"></span> Other Link</div>
+                                    </div>
+                                </div> {# End legend card-body #}
+                            </div> {# End legend card #}
+                        </div> {# End legend col #}
+                    </div> {# End legend row #}
+                </div> {# End main card-body #}
+            </div> {# End main card #}
+        </div> {# End col-md-9 #}
+    </div> {# End row #}
+</div> {# End container-fluid #}
 
-<!-- Configuration Modal -->
-<div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
+{# --- Modals --- #}
+{# Error Modal (Copied from previous good version) #}
+<div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title" id="errorModalLabel">Error</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body"><div id="errorMessage" class="alert alert-danger mb-0">Error message</div></div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div></div>
+</div>
+
+{# Node Info Modal (Copied from previous good version) #}
+<div class="modal fade" id="nodeInfoModal" tabindex="-1" aria-labelledby="nodeInfoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="configModalLabel">Advanced Configuration</h5>
+                <h5 class="modal-title" id="nodeInfoModalLabel">Node Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="nodeInfoLoading" class="text-center" style="display: none;"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
+                <div id="nodeInfoContent" style="display: none;">
+                    <h4 id="nodeTitle">Node Title</h4><div id="nodeUrl" class="mb-3 small text-muted">Node URL</div>
+                    <div class="row mb-3">
+                        <div class="col-md-6"><div class="card"><div class="card-header py-2"><h6 class="mb-0">Properties</h6></div><div class="card-body p-0"><table class="table table-sm table-borderless mb-0"><tbody id="nodeProperties"></tbody></table></div></div></div>
+                        <div class="col-md-6"><div class="card"><div class="card-header py-2"><h6 class="mb-0">Centrality</h6></div><div class="card-body p-0"><table class="table table-sm table-borderless mb-0"><tbody id="centralityMetrics"></tbody></table></div></div></div>
+                    </div>
+                    <h6 class="mb-1">Neighbors <span id="neighborCount" class="badge bg-secondary ms-1">0</span></h6>
+                    <div id="neighborsList" class="list-group list-group-flush border rounded" style="max-height: 200px; overflow-y: auto;">{# Added border/rounded #}
+                        {# Neighbors loaded here by JS #}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div></div>
+</div>
+
+{# Config Modal (Copied from previous good version) #}
+<div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configModalLabel">Configuration</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form action="/config" method="post" enctype="multipart/form-data">
                 <div class="modal-body">
                     <h6>Graph Settings</h6>
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label for="maxNodesConfig">Max Nodes:</label>
-                                <input type="number" class="form-control" id="maxNodesConfig" name="max_nodes" value="{{ config.max_nodes }}">
-                                <small class="form-text text-muted">Maximum number of nodes to load from the graph</small>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label for="layoutIterationsConfig">Layout Iterations:</label>
-                                <input type="number" class="form-control" id="layoutIterationsConfig" name="layout_iterations" value="{{ config.layout_iterations }}">
-                                <small class="form-text text-muted">Number of iterations for graph layout algorithm</small>
-                            </div>
-                        </div>
+                        <div class="col-md-6"><div class="mb-3"><label for="maxNodesConfig" class="form-label">Max Nodes:</label><input type="number" class="form-control form-control-sm" id="maxNodesConfig" name="max_nodes" value="{{ config.max_nodes | default(1000) }}"><small class="form-text text-muted">Max nodes to load</small></div></div>
+                        <div class="col-md-6"><div class="mb-3"><label for="layoutIterationsConfig" class="form-label">Layout Iterations:</label><input type="number" class="form-control form-control-sm" id="layoutIterationsConfig" name="layout_iterations" value="{{ config.layout_iterations | default(50) }}"><small class="form-text text-muted">For graph layout</small></div></div>
                     </div>
-
                     <h6>Algorithm Settings</h6>
                     <div class="row mb-3">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="beamWidthConfig">Beam Width:</label>
-                                <input type="number" class="form-control" id="beamWidthConfig" name="beam_width" value="{{ config.beam_width }}">
-                                <small class="form-text text-muted">Number of paths to explore in parallel</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="heuristicWeightConfig">Heuristic Weight:</label>
-                                <input type="number" step="0.1" class="form-control" id="heuristicWeightConfig" name="heuristic_weight" value="{{ config.heuristic_weight }}">
-                                <small class="form-text text-muted">Weight of the heuristic component</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="maxStepsConfig">Max Steps:</label>
-                                <input type="number" class="form-control" id="maxStepsConfig" name="max_steps" value="{{ config.max_steps }}">
-                                <small class="form-text text-muted">Maximum number of steps in path finding</small>
-                            </div>
-                        </div>
+                        <div class="col-md-4"><div class="mb-3"><label for="beamWidthConfig" class="form-label">Beam Width:</label><input type="number" class="form-control form-control-sm" id="beamWidthConfig" name="beam_width" value="{{ config.beam_width | default(5) }}"><small class="form-text text-muted">Beam/Hybrid</small></div></div>
+                        <div class="col-md-4"><div class="mb-3"><label for="heuristicWeightConfig" class="form-label">Heuristic Wt:</label><input type="number" step="0.1" class="form-control form-control-sm" id="heuristicWeightConfig" name="heuristic_weight" value="{{ config.heuristic_weight | default(1.5) }}"><small class="form-text text-muted">BiDir Guided</small></div></div>
+                        <div class="col-md-4"><div class="mb-3"><label for="maxStepsConfig" class="form-label">Max Steps:</label><input type="number" class="form-control form-control-sm" id="maxStepsConfig" name="max_steps" value="{{ config.max_steps | default(30) }}"><small class="form-text text-muted">Pathfinding</small></div></div>
                     </div>
-
                     <h6>Visualization Settings</h6>
                     <div class="row mb-3">
-                        <div class="col-md-12">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="visualizeExplorationConfig" name="visualize_exploration" value="1" {% if config.visualize_exploration %}checked{% endif %}>
-                                <label class="form-check-label" for="visualizeExplorationConfig">
-                                    Track exploration history (enables step-by-step animation)
-                                </label>
-                                <small class="form-text text-muted d-block">May increase memory usage and response time</small>
-                            </div>
-                        </div>
+                        <div class="col-md-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="visualizeExplorationConfig" name="visualize_exploration" value="1" {% if config.visualize_exploration %}checked{% endif %}><label class="form-check-label" for="visualizeExplorationConfig">Track exploration history (enables animation)</label><small class="form-text text-muted d-block">Requires backend support. May increase response time.</small></div></div>
                     </div>
-
                     <h6>Data Files</h6>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label for="edgeFileConfig">Edge File:</label>
-                                <input type="file" class="form-control" id="edgeFileConfig" name="edge_file">
-                                <small class="form-text text-muted">Current: {{ config.edge_file }}</small>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label for="modelPathConfig">Model File:</label>
-                                <input type="file" class="form-control" id="modelPathConfig" name="model_path">
-                                <small class="form-text text-muted">Current: {{ config.model_path }}</small>
-                            </div>
-                        </div>
+                     <div class="row mb-3">
+                        <div class="col-md-6"><div class="mb-3"><label for="edgeFileConfig" class="form-label">Edge File:</label><input type="file" class="form-control form-control-sm" id="edgeFileConfig" name="edge_file"><small class="form-text text-muted">Current: {{ config.edge_file }}</small></div></div>
+                        <div class="col-md-6"><div class="mb-3"><label for="modelPathConfig" class="form-label">Model File:</label><input type="file" class="form-control form-control-sm" id="modelPathConfig" name="model_path"><small class="form-text text-muted">Current: {{ config.model_path }}</small></div></div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="submit" class="btn btn-primary">Save & Reload App</button> {# Button text clarifies action #}
                 </div>
             </form>
-        </div>
-    </div>
-</div> <!-- End of Configuration Modal -->
+    </div></div>
+</div>
+{% endblock %} {# End of 'content' block #}
 
-<!-- Error Modal -->
-<div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="errorModalLabel">Error</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="errorMessage" class="alert alert-danger"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div> <!-- End of Error Modal -->
-
-<!-- Node Info Modal -->
-<div class="modal fade" id="nodeInfoModal" tabindex="-1" aria-labelledby="nodeInfoModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="nodeInfoModalLabel">Node Information</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="nodeInfoLoading" class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                </div>
-                <div id="nodeInfoContent" style="display: none;">
-                    <h4 id="nodeTitle"></h4>
-                    <div id="nodeUrl" class="mb-3"></div>
-
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h5>Centrality Metrics</h5>
-                                </div>
-                                <div class="card-body p-0">
-                                    <table class="table table-sm mb-0">
-                                        <tbody id="centralityMetrics">
-                                            <!-- Centrality metrics will be inserted here -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h5>Node Properties</h5>
-                                </div>
-                                <div class="card-body p-0">
-                                    <table class="table table-sm mb-0">
-                                        <tbody id="nodeProperties">
-                                            <!-- Node properties will be inserted here -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <h5>Neighbors <span id="neighborCount" class="badge bg-secondary"></span></h5>
-                    <div id="neighborsList" class="list-group" style="max-height: 200px; overflow-y: auto;">
-                        <!-- Neighbors will be inserted here -->
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div> <!-- End of Node Info Modal -->
-
-{% endblock %} {# <<<<<< MOVED THIS TAG HERE to close the 'content' block #}
-
-
-{% block extra_css %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
-<style>
-    .path-container {
-        max-height: 300px;
-        overflow-y: auto;
-        border: 1px solid #dee2e6;
-        border-radius: 0.25rem;
-    }
-
-    .node {
-        stroke: #fff;
-        stroke-width: 1.5px;
-        cursor: pointer;
-    }
-
-    .link {
-        stroke: #999;
-        stroke-opacity: 0.6;
-    }
-
-    .path-link {
-        stroke-width: 2px;
-    }
-
-    .gnn-path {
-        stroke: #198754;
-    }
-
-    .bfs-path {
-        stroke: #dc3545;
-    }
-
-    .tooltip {
-        position: absolute;
-        padding: 5px 10px;
-        background: rgba(0, 0, 0, 0.8);
-        color: #fff;
-        border-radius: 4px;
-        pointer-events: none;
-        font-size: 12px;
-        z-index: 1000;
-    }
-    /* Ensure graph vis div has explicit size for D3 */
-    #graphVisualization {
-        height: 600px;
-        background-color: #f8f9fa;
-        border-radius: 4px;
-        border: 1px solid #dee2e6; /* Added border for visibility */
-        position: relative; /* Needed for absolute positioning inside */
-    }
-    #graphVisualization svg {
-        display: block; /* Prevent extra space below SVG */
-        width: 100%;
-        height: 100%;
-    }
-
-</style>
-{% endblock %}
 
 {% block extra_js %}
-<script src="https://d3js.org/d3.v7.min.js"></script>
-{# Removed the duplicate script content - Assuming the JS logic is only needed once #}
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // DOM elements
-        const sourceNode = document.getElementById('sourceNode');
-        const targetNode = document.getElementById('targetNode');
-        const traversalMethod = document.getElementById('traversalMethod');
-        const maxSteps = document.getElementById('maxSteps');
-        const beamWidth = document.getElementById('beamWidth');
-        const heuristicWeight = document.getElementById('heuristicWeight');
-        const traverseBtn = document.getElementById('traverseBtn');
-        const randomPairBtn = document.getElementById('randomPairBtn');
-        const statsContainer = document.getElementById('statsContainer');
-
-        // Results elements
-        const gnnPathLength = document.getElementById('gnnPathLength');
-        const gnnNodesExplored = document.getElementById('gnnNodesExplored');
-        const bfsPathLength = document.getElementById('bfsPathLength');
-        const bfsNodesExplored = document.getElementById('bfsNodesExplored');
-        const efficiencyRatio = document.getElementById('efficiencyRatio');
-        const gnnTime = document.getElementById('gnnTime');
-        const bfsTime = document.getElementById('bfsTime');
-        const gnnPath = document.getElementById('gnnPath');
-        const bfsPath = document.getElementById('bfsPath');
-
-        // Animation controls
-        const animationToggle = document.getElementById('animationToggle');
-        const animationProgress = document.getElementById('animationProgress');
-        const animationControls = document.getElementById('animationControls');
-        const animationPrevBtn = document.getElementById('animationPrevBtn');
-        const animationNextBtn = document.getElementById('animationNextBtn');
-        const animationPlayBtn = document.getElementById('animationPlayBtn');
-        const currentStepEl = document.getElementById('currentStep'); // Renamed variable
-        const totalStepsEl = document.getElementById('totalSteps');  // Renamed variable
-
-        // Add event listeners
-        traverseBtn.addEventListener('click', findPath);
-        randomPairBtn.addEventListener('click', getRandomPair);
-        animationPrevBtn.addEventListener('click', previousStep);
-        animationNextBtn.addEventListener('click', nextStep);
-        animationPlayBtn.addEventListener('click', toggleAnimation);
-
-        // Visualization state
-        let graphData = null;
-        let currentStepIndex = 0;
-        let animationData = [];
-        let animationTimer = null;
-        let isAnimationPlaying = false;
-        let simulation = null; // Store D3 simulation
-        let svg = null; // Store SVG element
-        let nodeSelection = null; // Store D3 node selection
-        let linkSelection = null; // Store D3 link selection
-        let tooltip = null; // Store tooltip element
-
-        // Update animation controls visibility based on toggle
-        animationToggle.addEventListener('change', function() {
-            updateAnimationControlsVisibility();
-             // If toggled off and data exists, show final state immediately
-             if (!animationToggle.checked && graphData) {
-                renderVisualizationFinal();
-             } else if (animationToggle.checked && graphData && animationData.length > 0) {
-                // If toggled on and animation data exists, render current step
-                renderVisualizationStep(currentStepIndex);
-             }
-        });
-
-        // Find path between nodes
-        function findPath() {
-            const source = sourceNode.value;
-            const target = targetNode.value;
-            const method = traversalMethod.value;
-            const steps = maxSteps.value;
-            const beam = beamWidth.value;
-            const heuristic = heuristicWeight.value;
-
-            if (!source || !target) {
-                showError('Please select both source and target nodes');
-                return;
-            }
-
-            if (source === target) {
-                showError('Source and target nodes must be different');
-                return;
-            }
-
-            // Show loading
-            traverseBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Finding Path...';
-            traverseBtn.disabled = true;
-
-            // Reset animation state
-            resetAnimation();
-            clearVisualization(); // Clear previous D3 viz
-
-            // Make API request
-            fetch('/traverse', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    source_id: source,
-                    target_id: target,
-                    method: method,
-                    max_steps: steps,
-                    beam_width: beam, // Make sure backend uses these if needed by method
-                    heuristic_weight: heuristic // Make sure backend uses these if needed
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Reset button
-                traverseBtn.innerHTML = 'Find Path';
-                traverseBtn.disabled = false;
-
-                if (data.error) {
-                    showError(data.error);
-                    return;
-                }
-
-                // Show results
-                displayResults(data);
-
-                // Show stats
-                statsContainer.style.display = 'block';
-
-                // Process data for visualization
-                initializeVisualization(data);
-            })
-            .catch(error => {
-                traverseBtn.innerHTML = 'Find Path';
-                traverseBtn.disabled = false;
-                showError('Error: ' + error.message);
-            });
-        }
-
-        // Get random node pair
-        function getRandomPair() {
-            fetch('/random_nodes')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        showError(data.error);
-                        return;
-                    }
-
-                    // Set source and target nodes
-                    // Use more robust method if select2/choices.js is used later
-                    sourceNode.value = data.source_id;
-                    targetNode.value = data.target_id;
-
-                    // Show expected path length (optional, could be toast/alert)
-                    // showMessage(`Found random pair with expected path length: ${data.expected_path_length}`);
-                })
-                .catch(error => {
-                    showError('Error: ' + error.message);
-                });
-        }
-
-
-        // Display traversal results
-        function displayResults(data) {
-            // Update table
-            gnnPathLength.textContent = data.path_length ?? '-';
-            gnnNodesExplored.textContent = data.nodes_explored ?? '-';
-            bfsPathLength.textContent = data.bfs_path_length ?? '-';
-            bfsNodesExplored.textContent = data.bfs_nodes_explored ?? '-';
-            efficiencyRatio.textContent = data.efficiency_ratio !== undefined ? data.efficiency_ratio.toFixed(2) + 'x' : '-';
-            gnnTime.textContent = data.time_taken !== undefined ? data.time_taken.toFixed(3) + 's' : '-';
-            bfsTime.textContent = data.bfs_time_taken !== undefined ? data.bfs_time_taken.toFixed(3) + 's' : '-';
-
-            // Display paths
-            displayPath(gnnPath, data.path);
-            displayPath(bfsPath, data.bfs_path);
-        }
-
-        // Display a path in the list group
-        function displayPath(container, path) {
-            container.innerHTML = ''; // Clear previous path
-
-            if (!path || path.length === 0) {
-                container.innerHTML = '<div class="list-group-item list-group-item-danger">No path found</div>';
-                return;
-            }
-
-            path.forEach((node, i) => {
-                let item = document.createElement('div');
-                item.className = 'list-group-item d-flex justify-content-between align-items-center py-1 px-2'; // Smaller padding
-
-                let nodeTitle = node.title || `Node ${node.id}`; // Fallback title
-
-                if (i === 0) {
-                    item.classList.add('list-group-item-success'); // Source node
-                } else if (i === path.length - 1) {
-                    item.classList.add('list-group-item-primary'); // Target node
-                }
-
-                let content = `<span class="me-2" style="min-width: 25px;"><strong>${i+1}.</strong></span> ${nodeTitle}`;
-
-                if (node.url) {
-                    content += ` <a href="${node.url}" target="_blank" class="ms-1" title="Open Wikipedia Page"><i class="bi bi-box-arrow-up-right"></i></a>`;
-                }
-
-                // Add button to show node info
-                content += ` <button type="button" class="btn btn-sm btn-outline-secondary node-info-btn ms-auto" data-node-id="${node.id}" title="Show Node Info">
-                                <i class="bi bi-info-circle"></i>
-                            </button>`;
-
-                item.innerHTML = content;
-                container.appendChild(item);
-            });
-
-            // Add event listeners to node info buttons within this container
-            container.querySelectorAll('.node-info-btn').forEach(btn => {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation(); // Prevent other clicks if needed
-                    const nodeId = btn.getAttribute('data-node-id');
-                    showNodeInfo(nodeId);
-                });
-            });
-        }
-
-
-        // Show node information modal
-        function showNodeInfo(nodeId) {
-            const modalElement = document.getElementById('nodeInfoModal');
-            const nodeInfoModal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-
-            // Show loading spinner
-            document.getElementById('nodeInfoLoading').style.display = 'block';
-            document.getElementById('nodeInfoContent').style.display = 'none';
-
-            nodeInfoModal.show();
-
-            // Fetch node info
-            fetch(`/node_info?id=${nodeId}`)
-                .then(response => {
-                     if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}`); }
-                     return response.json();
-                 })
-                .then(data => {
-                    if (data.error) {
-                        showError(data.error); // Use showError to display in error modal
-                        nodeInfoModal.hide(); // Hide the info modal if error
-                        return;
-                    }
-
-                    // Update modal content
-                    document.getElementById('nodeTitle').textContent = data.title || `Node ${data.id}`;
-
-                    const nodeUrlElement = document.getElementById('nodeUrl');
-                    if (data.url) {
-                        nodeUrlElement.innerHTML = `<a href="${data.url}" target="_blank">${data.url} <i class="bi bi-box-arrow-up-right"></i></a>`;
-                    } else {
-                        nodeUrlElement.innerHTML = 'No URL available';
-                    }
-
-                    // Centrality metrics (Clear existing)
-                    const centralityMetricsElement = document.getElementById('centralityMetrics');
-                    centralityMetricsElement.innerHTML = '<tr><td colspan="2" class="text-center">Centrality metrics not available</td></tr>'; // Placeholder
-
-                    // Node properties (Clear existing)
-                    const nodePropertiesElement = document.getElementById('nodeProperties');
-                    nodePropertiesElement.innerHTML = ''; // Clear first
-                    // Add properties like ID, Degree (Neighbor count)
-                    let degree = data.neighbors ? data.neighbors.length : 'N/A';
-                     if (data.neighbor_count !== undefined) degree = data.neighbor_count; // Prefer explicit count if available
-                    nodePropertiesElement.innerHTML += `<tr><th>ID</th><td>${data.id}</td></tr>`;
-                    nodePropertiesElement.innerHTML += `<tr><th>Degree (Neighbors)</th><td>${degree}</td></tr>`;
-                    // Add more properties if returned by the backend
-
-
-                    // Neighbors (Clear existing)
-                    const neighborsListElement = document.getElementById('neighborsList');
-                    neighborsListElement.innerHTML = ''; // Clear first
-
-                    if (data.neighbors && data.neighbors.length > 0) {
-                         document.getElementById('neighborCount').textContent = data.neighbors.length; // Update count shown
-                        data.neighbors.forEach(neighbor => {
-                            const item = document.createElement('button');
-                            item.type = 'button'; // Important for buttons in list-group
-                            item.className = 'list-group-item list-group-item-action py-1 px-2';
-                            item.textContent = neighbor.title || `Node ${neighbor.id}`;
-                            item.setAttribute('data-node-id', neighbor.id);
-
-                            // Add click event to show neighbor info recursively
-                            item.addEventListener('click', function() {
-                                // Maybe hide current modal before showing next? Or allow stacking?
-                                // For simplicity, just show the new one:
-                                showNodeInfo(neighbor.id);
-                            });
-                            neighborsListElement.appendChild(item);
-                        });
-                    } else {
-                        document.getElementById('neighborCount').textContent = '0';
-                        neighborsListElement.innerHTML = '<div class="list-group-item">No neighbors found</div>';
-                    }
-
-
-                    // Hide loading, show content
-                    document.getElementById('nodeInfoLoading').style.display = 'none';
-                    document.getElementById('nodeInfoContent').style.display = 'block';
-                })
-                .catch(error => {
-                    console.error("Error fetching node info:", error);
-                    // Display error inside the modal or close it
-                    document.getElementById('nodeInfoLoading').style.display = 'none';
-                    // Optionally show error message inside modal content area
-                    document.getElementById('nodeInfoContent').innerHTML = `<div class="alert alert-danger">Failed to load node info: ${error.message}</div>`;
-                    document.getElementById('nodeInfoContent').style.display = 'block';
-                    // Or just hide the modal
-                    // nodeInfoModal.hide();
-                    // showError('Error fetching node info: ' + error.message); // Show in main error modal
-                });
-        }
-
-
-        // Initialize visualization with received traversal data
-        function initializeVisualization(data) {
-            graphData = data; // Store the full data package
-
-            if (!graphData.layout) {
-                showError("Layout data is missing. Cannot visualize graph.");
-                return;
-            }
-
-            prepareAnimationData(data); // Prepare steps for animation
-
-            // Update and display controls based on toggle
-            updateAnimationControlsVisibility();
-
-            if (animationToggle.checked && animationData.length > 0) {
-                renderVisualizationStep(0); // Show first frame
-                updateAnimationControls();
-            } else if (graphData) {
-                // If animation is off, render the final static state
-                renderVisualizationFinal();
-            }
-        }
-
-        // Prepare structured data for animation frames
-        function prepareAnimationData(data) {
-            animationData = [];
-            const bfsHistory = data.bfs_exploration_history || [];
-            const gnnHistory = data.gnn_exploration_history || [];
-            const sourceId = data.bfs_path?.[0]?.id || data.path?.[0]?.id;
-            const targetId = data.bfs_path?.[data.bfs_path.length - 1]?.id || data.path?.[data.path.length - 1]?.id;
-
-            // Initial state (Step 0)
-            animationData.push({
-                step: 0, title: 'Initial State',
-                bfs_frontier_forward: sourceId ? [sourceId] : [],
-                bfs_frontier_backward: targetId ? [targetId] : [],
-                gnn_frontier_forward: sourceId ? [sourceId] : [],
-                gnn_frontier_backward: targetId ? [targetId] : [],
-                traversed_edges: [], bfs_path: [], gnn_path: []
-            });
-
-            // Exploration steps
-            const maxHistLength = Math.max(bfsHistory.length, gnnHistory.length);
-            for (let i = 0; i < maxHistLength; i++) {
-                const bfsStep = bfsHistory[i];
-                const gnnStep = gnnHistory[i];
-                animationData.push({
-                    step: i + 1, title: `Step ${i + 1}`,
-                    // Convert indices back to IDs carefully
-                    bfs_frontier_forward: bfsStep?.forward_frontier?.map(String) || [],
-                    bfs_frontier_backward: bfsStep?.backward_frontier?.map(String) || [],
-                    gnn_frontier_forward: gnnStep?.forward_frontier?.map(String) || [],
-                    gnn_frontier_backward: gnnStep?.backward_frontier?.map(String) || [],
-                    traversed_edges: bfsStep?.traversed_edges || [], // Use edges from BFS history
-                    bfs_path: [], gnn_path: []
-                });
-            }
-
-            // Final state with paths
-            animationData.push({
-                step: maxHistLength + 1, title: 'Final Paths',
-                bfs_frontier_forward: [], bfs_frontier_backward: [],
-                gnn_frontier_forward: [], gnn_frontier_backward: [],
-                traversed_edges: bfsHistory[bfsHistory.length - 1]?.traversed_edges || [], // Carry over last traversed
-                bfs_path: data.bfs_path?.map(n => n.id) || [],
-                gnn_path: data.path?.map(n => n.id) || []
-            });
-        }
-
-        // Update visibility of animation controls
-        function updateAnimationControlsVisibility() {
-            const showControls = animationToggle.checked && animationData.length > 1;
-            animationProgress.style.display = showControls ? 'flex' : 'none'; // Use flex for progress
-            animationControls.style.display = showControls ? 'flex' : 'none';
-        }
-
-        // Update animation control elements (progress bar, step counts, button states)
-        function updateAnimationControls() {
-            if (animationData.length <= 1) return; // No controls needed if only one frame
-
-            const progressBar = animationProgress.querySelector('.progress-bar');
-            // Ensure max value is at least 1 to avoid division by zero
-             const totalAnimSteps = Math.max(1, animationData.length - 1);
-             const percentage = Math.min(100, Math.max(0, (currentStepIndex / totalAnimSteps) * 100));
-
-            progressBar.style.width = `${percentage}%`;
-            progressBar.setAttribute('aria-valuenow', percentage);
-            progressBar.textContent = `${Math.round(percentage)}%`;
-
-            currentStepEl.textContent = `Step ${animationData[currentStepIndex].step}`; // Use step number from data
-            totalStepsEl.textContent = animationData[animationData.length - 1].step; // Last frame's step number
-
-            animationPrevBtn.disabled = currentStepIndex === 0;
-            animationNextBtn.disabled = currentStepIndex === animationData.length - 1;
-
-             // Update play/pause button icon
-             animationPlayBtn.innerHTML = isAnimationPlaying ? '<i class="bi bi-pause-fill"></i> Pause' : '<i class="bi bi-play-fill"></i> Play';
-
-            // Update visualization title
-            document.getElementById('visualizationTitle').textContent = `Graph Visualization: ${animationData[currentStepIndex].title}`;
-        }
-
-
-        // Clear the D3 visualization SVG content
-         function clearVisualization() {
-             const container = document.getElementById('graphVisualization');
-             container.innerHTML = ''; // Remove SVG and tooltip
-             // Re-create tooltip div if needed, or handle its removal/re-creation in renderD3Graph
-             if (tooltip) tooltip.remove();
-             tooltip = null;
-             if (simulation) simulation.stop(); // Stop any previous simulation
-             simulation = null;
-             svg = null;
-             nodeSelection = null;
-             linkSelection = null;
-         }
-
-
-        // Render graph using D3 for a specific animation step
-        function renderVisualizationStep(stepIndex) {
-            if (!graphData || !animationData || stepIndex < 0 || stepIndex >= animationData.length) {
-                 console.error("Invalid step index or missing data for rendering step:", stepIndex);
-                 return;
-             }
-
-            currentStepIndex = stepIndex;
-            const stepData = animationData[stepIndex];
-
-            // --- Prepare Nodes ---
-            const nodes = Object.entries(graphData.layout || {}).map(([nodeId, position]) => {
-                const nodeDetail = graphData.path?.find(n => n.id === nodeId) || graphData.bfs_path?.find(n => n.id === nodeId) || { id: nodeId, title: `Node ${nodeId}` };
-                let nodeType = 'regular'; // Default
-
-                const isSource = graphData.path?.[0]?.id === nodeId;
-                const isTarget = graphData.path?.[graphData.path.length - 1]?.id === nodeId;
-                const inGnnPath = stepData.gnn_path?.includes(nodeId);
-                const inBfsPath = stepData.bfs_path?.includes(nodeId);
-                const inGnnFwd = stepData.gnn_frontier_forward?.includes(nodeId);
-                const inGnnBwd = stepData.gnn_frontier_backward?.includes(nodeId);
-                const inBfsFwd = stepData.bfs_frontier_forward?.includes(nodeId);
-                const inBfsBwd = stepData.bfs_frontier_backward?.includes(nodeId);
-
-                if (isSource) nodeType = 'source';
-                else if (isTarget) nodeType = 'target';
-                else if (inGnnPath && inBfsPath) nodeType = 'both_path'; // Added type for clarity
-                else if (inGnnPath) nodeType = 'gnn_path';
-                else if (inBfsPath) nodeType = 'bfs_path';
-                else if ((inGnnFwd || inGnnBwd) && (inBfsFwd || inBfsBwd)) nodeType = 'both_frontier'; // Added type
-                else if (inGnnFwd || inGnnBwd) nodeType = 'gnn_frontier';
-                else if (inBfsFwd || inBfsBwd) nodeType = 'bfs_frontier';
-
-                return {
-                    id: nodeId,
-                    title: nodeDetail.title,
-                    x: position.x * 1000, // Use scaling factor
-                    y: position.y * 1000,
-                    type: nodeType
-                };
-            });
-
-            // --- Prepare Links ---
-             const links = [];
-             const linkSet = new Set(); // To avoid duplicate links if an edge is traversed and also in final path
-
-             // Add traversed edges (BFS only usually)
-             (stepData.traversed_edges || []).forEach(edge => {
-                 const sourceId = String(edge[0]);
-                 const targetId = String(edge[1]);
-                 const key = `${Math.min(edge[0], edge[1])}-${Math.max(edge[0], edge[1])}`; // Canonical key
-                 if (!linkSet.has(key)) {
-                     links.push({ source: sourceId, target: targetId, type: 'traversed' });
-                     linkSet.add(key);
-                 }
-             });
-
-             // Add GNN path edges
-             for (let i = 0; i < (stepData.gnn_path?.length || 0) - 1; i++) {
-                 const sourceId = stepData.gnn_path[i];
-                 const targetId = stepData.gnn_path[i + 1];
-                 const key = `${Math.min(sourceId, targetId)}-${Math.max(sourceId, targetId)}`;
-                 if (!linkSet.has(key)) { // Only add if not already added as traversed
-                     links.push({ source: sourceId, target: targetId, type: 'gnn_path' });
-                     linkSet.add(key);
-                 } else { // If already traversed, maybe update its type? Or keep as traversed? Let's keep traversed.
-                     // Find existing link and potentially update type if needed - or just let traversed style dominate
-                 }
-             }
-             // Add BFS path edges (similar logic)
-             for (let i = 0; i < (stepData.bfs_path?.length || 0) - 1; i++) {
-                  const sourceId = stepData.bfs_path[i];
-                  const targetId = stepData.bfs_path[i + 1];
-                  const key = `${Math.min(sourceId, targetId)}-${Math.max(sourceId, targetId)}`;
-                  if (!linkSet.has(key)) {
-                      links.push({ source: sourceId, target: targetId, type: 'bfs_path' });
-                      linkSet.add(key);
-                  }
-             }
-
-
-            // --- Render ---
-            renderD3Graph(nodes, links); // Pass prepared data
-            updateAnimationControls();
-        }
-
-        // Render the final state visualization (paths highlighted)
-        function renderVisualizationFinal() {
-             if (!graphData || !graphData.layout) return;
-             const finalStepData = animationData[animationData.length - 1] || {bfs_path:[], gnn_path:[]}; // Get last frame's data
-
-             const nodes = Object.entries(graphData.layout).map(([nodeId, position]) => {
-                 const nodeDetail = graphData.path?.find(n => n.id === nodeId) || graphData.bfs_path?.find(n => n.id === nodeId) || { id: nodeId, title: `Node ${nodeId}` };
-                 let nodeType = 'regular';
-                 const isSource = graphData.path?.[0]?.id === nodeId;
-                 const isTarget = graphData.path?.[graphData.path.length - 1]?.id === nodeId;
-                 const inGnnPath = finalStepData.gnn_path?.includes(nodeId);
-                 const inBfsPath = finalStepData.bfs_path?.includes(nodeId);
-
-                 if (isSource) nodeType = 'source';
-                 else if (isTarget) nodeType = 'target';
-                 else if (inGnnPath && inBfsPath) nodeType = 'both_path';
-                 else if (inGnnPath) nodeType = 'gnn_path';
-                 else if (inBfsPath) nodeType = 'bfs_path';
-
-                 return {id: nodeId, title: nodeDetail.title, x: position.x*1000, y: position.y*1000, type: nodeType};
-             });
-
-             const links = [];
-             const linkSet = new Set();
-              // Add GNN path edges
-             for (let i = 0; i < (finalStepData.gnn_path?.length || 0) - 1; i++) {
-                 const sourceId = finalStepData.gnn_path[i];
-                 const targetId = finalStepData.gnn_path[i + 1];
-                 const key = `${Math.min(sourceId, targetId)}-${Math.max(sourceId, targetId)}`;
-                 if (!linkSet.has(key)) {
-                     links.push({ source: sourceId, target: targetId, type: 'gnn_path' });
-                     linkSet.add(key);
-                 }
-             }
-             // Add BFS path edges
-             for (let i = 0; i < (finalStepData.bfs_path?.length || 0) - 1; i++) {
-                  const sourceId = finalStepData.bfs_path[i];
-                  const targetId = finalStepData.bfs_path[i + 1];
-                  const key = `${Math.min(sourceId, targetId)}-${Math.max(sourceId, targetId)}`;
-                  if (!linkSet.has(key)) {
-                      links.push({ source: sourceId, target: targetId, type: 'bfs_path' });
-                      linkSet.add(key);
-                  } else { // Handle overlap - maybe color differently or let one dominate
-                      const existingLink = links.find(l => (l.source === sourceId && l.target === targetId) || (l.source === targetId && l.target === sourceId));
-                      if(existingLink) existingLink.type = 'both_path'; // Example: create a combined type
-                  }
-             }
-
-             renderD3Graph(nodes, links);
-             document.getElementById('visualizationTitle').textContent = 'Graph Visualization: Final Paths';
-        }
-
-        // Central D3 rendering function
-         function renderD3Graph(nodes, links) {
-             const container = document.getElementById('graphVisualization');
-             // Clear previous SVG ONLY if it exists
-             if (svg) {
-                 svg.remove();
-                 svg = null; // Reset variable
-             }
-              // Remove old tooltip if it exists
-              if (tooltip) {
-                  tooltip.remove();
-                  tooltip = null;
-              }
-
-             const width = container.clientWidth || 600; // Fallback width
-             const height = container.clientHeight || 600; // Fallback height
-
-             // Ensure container has dimensions
-             if (width <= 0 || height <= 0) {
-                 console.warn("Graph container has no dimensions. Cannot render D3 graph.");
-                 container.innerHTML = '<div class="alert alert-warning">Cannot render graph: Container size is zero.</div>';
-                 return;
-             }
-
-             svg = d3.select('#graphVisualization').append('svg')
-                 .attr('width', width)
-                 .attr('height', height)
-                 .call(d3.zoom().on("zoom", function (event) {
-                    g.attr("transform", event.transform);
-                 }))
-                 .append("g"); // Group for zooming/panning
-
-             const g = svg; // Reference the group
-
-             tooltip = d3.select('body').append('div')
-                 .attr('class', 'tooltip')
-                 .style('opacity', 0);
-
-             // --- Define Colors and Sizes ---
-             const nodeColors = {
-                 'regular': '#808080', 'source': '#00FF00', 'target': '#FF0000',
-                 'gnn_path': '#2E8B57', 'bfs_path': '#dc3545', 'both_path': '#6f42c1', // Purple for overlap
-                 'gnn_frontier': '#1E90FF', 'bfs_frontier': '#FFA500', 'both_frontier': '#800080' // Dark Magenta for overlap
-             };
-             const nodeSizes = {
-                 'regular': 8, 'source': 15, 'target': 15,
-                 'gnn_path': 10, 'bfs_path': 10, 'both_path': 11,
-                 'gnn_frontier': 9, 'bfs_frontier': 9, 'both_frontier': 10
-             };
-             const linkColors = {
-                 'regular': '#D3D3D3', 'traversed': '#1E90FF',
-                 'gnn_path': '#2E8B57', 'bfs_path': '#dc3545', 'both_path': '#6f42c1'
-             };
-              const linkWidths = {
-                  'regular': 1, 'traversed': 1.5,
-                  'gnn_path': 2.5, 'bfs_path': 2.5, 'both_path': 3
-              };
-
-
-             // --- Create Links ---
-             linkSelection = g.append("g")
-                 .attr("class", "links")
-                 .selectAll("line")
-                 .data(links, d => `${d.source}-${d.target}`) // Key function for object constancy
-                 .join("line")
-                   .attr("stroke", d => linkColors[d.type] || linkColors.regular)
-                   .attr("stroke-width", d => linkWidths[d.type] || linkWidths.regular)
-                   .attr("stroke-opacity", 0.7);
-
-             // --- Create Nodes ---
-             // Need to map node IDs to node data for D3 simulation if using physics
-             // If using preset layout, we just need the nodes array as created earlier
-             nodeSelection = g.append("g")
-                 .attr("class", "nodes")
-                 .selectAll("circle")
-                 .data(nodes, d => d.id) // Key function
-                 .join("circle")
-                   .attr("r", d => nodeSizes[d.type] || nodeSizes.regular)
-                   .attr("fill", d => nodeColors[d.type] || nodeColors.regular)
-                   .attr("stroke", "#fff")
-                   .attr("stroke-width", 1)
-                   .attr("cx", d => d.x) // Use precalculated x
-                   .attr("cy", d => d.y) // Use precalculated y
-                   .style("cursor", "pointer")
-                   .on('mouseover', function(event, d) {
-                       tooltip.transition().duration(100).style('opacity', .9);
-                       tooltip.html(d.title || `Node ${d.id}`)
-                           .style('left', (event.pageX + 5) + 'px')
-                           .style('top', (event.pageY - 28) + 'px');
-                       // Optional: Highlight node/neighbors on hover
-                       d3.select(this).attr('stroke', 'black').attr('stroke-width', 2);
-                   })
-                   .on('mouseout', function() {
-                       tooltip.transition().duration(300).style('opacity', 0);
-                       d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1); // Reset stroke
-                   })
-                   .on('click', function(event, d) {
-                       showNodeInfo(d.id);
-                   });
-
-             // --- Optional: Add labels for source/target ---
-             const labelSelection = g.append("g")
-                 .attr("class", "labels")
-                 .selectAll("text")
-                 .data(nodes.filter(d => d.type === 'source' || d.type === 'target'), d => d.id) // Key function
-                 .join("text")
-                   .attr("x", d => d.x + (nodeSizes[d.type] || nodeSizes.regular) + 2)
-                   .attr("y", d => d.y + 4) // Adjust vertical alignment
-                   .text(d => d.title.split(/[\s_]+/)[0]) // Show first word/part
-                   .attr("font-size", "10px")
-                   .attr("font-weight", "bold")
-                   .attr("pointer-events", "none"); // Prevent labels from blocking mouse events
-
-             // No simulation needed as we are using precalculated layout (x, y are set)
-             // If you wanted physics:
-             // simulation = d3.forceSimulation(nodes) ... setup forces ...
-             // simulation.on("tick", ticked); function ticked() { nodeSelection.attr(...) linkSelection.attr(...) }
-         }
-
-
-        // Animation control functions
-        function previousStep() {
-            if (currentStepIndex > 0) {
-                stopAnimation(); // Stop if playing
-                renderVisualizationStep(currentStepIndex - 1);
-            }
-        }
-
-        function nextStep() {
-            if (currentStepIndex < animationData.length - 1) {
-                stopAnimation(); // Stop if playing
-                renderVisualizationStep(currentStepIndex + 1);
-            }
-        }
-
-        function toggleAnimation() {
-            if (isAnimationPlaying) {
-                stopAnimation();
-            } else {
-                startAnimation();
-            }
-        }
-
-        function stopAnimation() {
-            if (animationTimer) {
-                clearInterval(animationTimer);
-                animationTimer = null;
-            }
-            isAnimationPlaying = false;
-             updateAnimationControls(); // Update button text/state
-        }
-
-        function startAnimation() {
-             if (isAnimationPlaying) return; // Already playing
-
-             isAnimationPlaying = true;
-             updateAnimationControls(); // Update button text/state
-
-             // If at the end, restart from step 0 for continuous play? Or just play once?
-             // Let's implement play once from current step:
-             if (currentStepIndex >= animationData.length - 1) {
-                // Optionally reset to 0 if you want loop/restart
-                // currentStepIndex = 0;
-                // renderVisualizationStep(currentStepIndex);
-                 stopAnimation(); // Already at the end
-                return;
-             }
-
-             // Calculate delay based on sidebar speed slider (needs reference)
-             // For now, fixed delay:
-             const delay = 1000 / 2.0; // Adjust speed (e.g., 2 steps/sec)
-
-             animationTimer = setInterval(() => {
-                 if (currentStepIndex < animationData.length - 1) {
-                     renderVisualizationStep(currentStepIndex + 1);
-                 } else {
-                     stopAnimation(); // Reached the end
-                 }
-             }, delay);
-         }
-
-
-        // Reset animation state completely
-        function resetAnimation() {
-            stopAnimation(); // Ensure timer is cleared
-            currentStepIndex = 0;
-            animationData = [];
-             // updateAnimationControlsVisibility(); // Hide controls
-             // No need to update controls fully as there's no data yet
-             currentStepEl.textContent = 'Step 0';
-             totalStepsEl.textContent = '0';
-             const progressBar = animationProgress.querySelector('.progress-bar');
-             progressBar.style.width = '0%'; progressBar.textContent = '0%';
-             animationPrevBtn.disabled = true; animationNextBtn.disabled = true;
-             updateAnimationControlsVisibility(); // Hide if necessary
-        }
-
-
-        // Show error modal
-        function showError(message) {
-            const errorMessage = document.getElementById('errorMessage');
-            errorMessage.textContent = message;
-            const errorModal = bootstrap.Modal.getInstance(document.getElementById('errorModal')) || new bootstrap.Modal(document.getElementById('errorModal'));
-            errorModal.show();
-        }
-
-        // Show message (e.g., for random pair success) - maybe use Bootstrap toasts later
-        // function showMessage(message) { alert(message); } // Simple alert for now
-
-        // Initial setup
-        updateAnimationControlsVisibility(); // Hide controls initially
-
-    });
-</script>
+    {# D3 Library #}
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    {# Your core JavaScript file #}
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% endblock %}
