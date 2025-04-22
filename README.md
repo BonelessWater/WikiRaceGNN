@@ -8,6 +8,7 @@ This project implements an advanced graph traversal algorithm that outperforms t
 - **Parallelizable**: Optimized for modern hardware with multi-core processing
 - **Memory Efficient**: Selective caching and pruning for optimal memory usage
 - **Adaptable**: Automatically selects the best traversal method based on graph properties
+- **Interactive Visualization**: Web interface for exploring traversal algorithms and comparing performance
 
 ## Prerequisites
 
@@ -71,6 +72,16 @@ Evaluate different traversal algorithms:
 poetry run python main.py --mode evaluate
 ```
 
+### Web Interface
+
+Run the interactive web interface for visualization:
+
+```bash
+poetry run python app.py
+```
+
+Then open your browser and navigate to `http://localhost:5000` to access the web interface.
+
 ## Command Line Arguments
 
 - `--edge_file`: Path to edge list CSV file (default: 'data/wiki_edges.csv')
@@ -102,12 +113,24 @@ The system supports several traversal methods:
 ```
 wiki_traversal/
 |
+├── app.py                     # Web interface application
+|
 ├── data/                      # Edge list, adjacency list and embeddings
 │
 ├── models/                    # Neural network models
 │   ├── __init__.py
 │   ├── graphsage.py           # GraphSAGE implementation
 │   └── attention.py           # Attention mechanisms
+│
+├── templates/                 # HTML templates for web interface
+│   ├── base.html              # Base template
+│   ├── index.html             # Main page
+│   ├── error.html             # Error page
+│   └── api_docs.html          # API documentation
+│
+├── static/                    # Static files for web interface
+│   ├── css/                   # CSS stylesheets
+│   └── js/                    # JavaScript files
 │
 ├── traversal/                 # Traversal algorithms
 │   ├── __init__.py
@@ -130,17 +153,35 @@ wiki_traversal/
 └── README.md                  # This file
 ```
 
+## Web Interface Features
+
+The web interface provides:
+
+- Interactive graph visualization with D3.js
+- Step-by-step animation of graph traversal algorithms
+- Comparison between baseline BFS and GNN-guided algorithms
+- Detailed statistics and performance metrics
+- Node information and graph property exploration
+
 ## Data Generation
 
 The generation process uses Word2Vec for creating node embeddings based on page titles.
 
 ## Visualization
 
-When using the `--visualize` flag, the system generates several visualizations in the `plots/` directory:
-- Path comparisons between different algorithms
-- Node exploration patterns
-- Efficiency metrics
-- Graph structure visualization
+The project offers two visualization options:
+
+1. **Static plots**: When using the `--visualize` flag with `main.py`, the system generates plots in the `plots/` directory:
+   - Path comparisons between different algorithms
+   - Node exploration patterns
+   - Efficiency metrics
+   - Graph structure visualization
+
+2. **Interactive web interface**: Running `app.py` provides a real-time visualization interface with:
+   - Interactive graph manipulation (zoom, pan)
+   - Animation of traversal steps
+   - Comparison of multiple algorithm results
+   - Detailed node information
 
 ## License
 
@@ -159,3 +200,12 @@ If you encounter dependency issues with Poetry:
    rm -rf $(poetry env info --path)
    poetry install
    ```
+
+### Web Interface Issues
+
+If you encounter issues with the web interface:
+
+1. Make sure all required directories exist (`data/`, `models/`, `static/`, etc.)
+2. Ensure the model has been trained and saved at the expected path
+3. Check that the graph data exists and is accessible
+4. For visualization issues, ensure your browser supports D3.js
