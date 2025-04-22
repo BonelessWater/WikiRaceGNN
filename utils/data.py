@@ -1,6 +1,7 @@
 import torch
 import pandas as pd
 import numpy as np
+import csv
 import random
 import os
 from torch_geometric.data import Data
@@ -8,6 +9,61 @@ from traversal.utils import bidirectional_bfs
 from tqdm import tqdm
 from gensim.models import Word2Vec
 from gensim.utils import simple_preprocess
+from collections import defaultdict
+
+
+
+def load_graph_data_no_pandas(
+    edge_file,
+    feature_dim=64,
+    max_nodes=None,
+    ensure_connected=True,
+    use_word2vec=False,      # you can re‑enable your gensim path later
+):
+    # 1) slurp in the raw edges
+    edges = []
+    with open(edge_file, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader, None)      # skip the header
+        for row in reader:
+            if len(row) != 2:
+                continue
+            src, dst = row
+            edges.append((src.strip(), dst.strip()))
+
+    # 2) build a node→index map
+    nodes = set(u for u, v in edges) | set(v for u, v in edges)
+    if max_nodes is not None:
+        # (optional) you can sample/prune here to max_nodes
+        nodes = set(list(nodes)[:max_nodes])
+        edges = [(u, v) for u, v in edges if u in nodes and v in nodes]
+
+    node_list = list(nodes)
+    idx = {n:i for i,n in enumerate(node_list)}
+
+    # 3) build the edge_index (and make it undirected)
+    row, col = [], []
+    for u, v in edges:
+        i, j = idx[u], idx[v]
+        row += [i, j]
+        col += [j, i]
+    edge_index = torch.tensor([row, col], dtype=torch.long)
+
+    # 4) dummy features (random).  Re‑wire your Word2Vec bit after this if you want.
+    x = torch.randn((len(node_list), feature_dim), dtype=torch.float)
+
+    data = Data(x=x, edge_index=edge_index)
+    data.node_mapping = idx
+    data.reverse_mapping = {i:n for n,i in idx.items()}
+    # 5) build an adjacency list for fast neighbor lookups
+    adj_list = defaultdict(list)
+    # edge_index is [2 x num_edges], and is already undirected
+    for src, dst in zip(edge_index[0].tolist(), edge_index[1].tolist()):
+        adj_list[src].append(dst)
+
+    data.adj_list = adj_list
+    return data
+
 
 def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=True, use_word2vec=True):
     """
@@ -26,7 +82,7 @@ def load_graph_data(edge_file, feature_dim=64, max_nodes=None, ensure_connected=
     """
     try:
         # Try to read edge list
-        df = pd.read_csv(edge_file)
+        df = pd.read_csv(edge_file, dtype=str)
     except FileNotFoundError:
         # If file not found, create a simple test graph
         print(f"Edge file {edge_file} not found. Creating a test graph.")

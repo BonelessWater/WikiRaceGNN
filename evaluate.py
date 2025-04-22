@@ -7,8 +7,9 @@ from collections import defaultdict
 
 from models import WikiGraphSAGE
 from traversal import GraphTraverser, bidirectional_bfs
+from utils.data import load_graph_data_no_pandas as load_graph_data
 from utils import (
-    load_graph_data,
+    #load_graph_data,
     generate_test_pairs,
     analyze_by_path_difficulty,
     visualize_all

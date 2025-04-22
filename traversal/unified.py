@@ -17,405 +17,230 @@ class TraversalStrategy(ABC):
         pass
 
 class BeamStrategy(TraversalStrategy):
-    """Beam search strategy"""
-    
     def traverse(self, start_idx, target_idx, max_steps):
-        """Beam search with semantic guidance"""
+        # clear any previous history
+        self.traverser.history.clear()
+
         if start_idx == target_idx:
             return [start_idx], 1
         
         traverser = self.traverser
         traverser.reset_exploration_counter()
         
-        # Initialize beam search
         current_beams = [(0, [start_idx])]
         visited = {start_idx}
         
         for step in range(max_steps):
             if not current_beams:
                 break
-            
-            # Create next generation of beams
             next_beams = []
-            
-            # Process current beams
             for _, path in current_beams:
-                current_idx = path[-1]
-                
-                if current_idx == target_idx:
+                node = path[-1]
+                if node == target_idx:
                     return path, traverser.nodes_explored
-                
-                # Get neighbors
-                neighbors = traverser.sample_neighbors(current_idx, exclude_nodes=set(path))
-                
-                # Score and add neighbors
-                for neighbor in neighbors:
-                    if neighbor not in visited:
-                        # Score this neighbor
-                        score = traverser.score_node(
-                            neighbor, target_idx, current_idx=current_idx, path_cost=len(path)
-                        )
-                        
-                        # Create new path
-                        new_path = path + [neighbor]
-                        
-                        # Add to candidates
+                for nbr in traverser.sample_neighbors(node, exclude_nodes=set(path)):
+                    if nbr not in visited:
+                        score = traverser.score_node(nbr, target_idx,
+                                                     current_idx=node,
+                                                     path_cost=len(path))
+                        new_path = path + [nbr]
                         next_beams.append((score, new_path))
-                        visited.add(neighbor)
-                        
-                        # Early success
-                        if neighbor == target_idx:
+                        visited.add(nbr)
+                        if nbr == target_idx:
                             return new_path, traverser.nodes_explored
-            
-            # No candidates found
             if not next_beams:
                 break
-            
-            # Select top-k beams for next iteration
-            next_beams.sort(key=lambda x: x[0])  # Sort by score
+            next_beams.sort(key=lambda x: x[0])
             current_beams = next_beams[:traverser.beam_width]
-        
-        # Return best path found if any
+            
+            # record just the “tails” of each beam as our forward frontier
+            beam_frontier = {path[-1] for _, path in current_beams}
+            self.traverser.history.append((beam_frontier, None, step))
+
         if current_beams:
-            best_path = min(current_beams, key=lambda x: x[0])[1]
-            return best_path, traverser.nodes_explored
-        
+            best = min(current_beams, key=lambda x: x[0])[1]
+            return best, traverser.nodes_explored
         return [], traverser.nodes_explored
 
 class AdaptiveBeamStrategy(TraversalStrategy):
-    """Advanced beam search with diversity promotion and exploration penalties"""
-    
+
     def traverse(self, start_idx, target_idx, max_steps):
-        """
-        Improved beam search with adaptive expansion and path diversity promotion.
-        """
         traverser = self.traverser
-        
-        # Reset counter
         traverser.reset_exploration_counter()
-        
-        # Handle identical nodes
+        traverser.history.clear()
+
         if start_idx == target_idx:
             return [start_idx], 1
-        
-        # Get embeddings
+
         source_emb = traverser.get_embedding(start_idx)
         target_emb = traverser.get_embedding(target_idx)
-        
-        # Initialize beam search
-        # Format: (score, diversity_score, path)
-        visited = {start_idx: 0}  # node -> depth first visited
+        visited = {start_idx: 0}
         current_beams = [(0.0, 0.0, [start_idx])]
-        
-        # Exploration counter and expansion tracking
         traverser.nodes_explored = 1
         expansions = 0
-        
-        # Track node visit frequency for diversity promotion
         visit_counts = {start_idx: 1}
-        
+
         for step in range(max_steps):
             if not current_beams or expansions >= traverser.max_expansions:
                 break
-                
-            # Create next generation of beams
             next_beams = []
-            
-            # Dynamic beam expansion based on similarity to target
-            for score, diversity_score, path in current_beams:
-                current = path[-1]
-                current_emb = traverser.get_embedding(current)
-                current_to_target_sim = traverser.get_similarity(current_emb, target_emb)
-                
-                # Check if we've reached the target
-                if current == target_idx:
+            for score, div_score, path in current_beams:
+                node = path[-1]
+                if node == target_idx:
                     return path, traverser.nodes_explored
-                
-                # Get neighbors
-                neighbors = traverser.data.adj_list.get(current, [])
-                
-                # Sort neighbors by embedding similarity to target for prioritized expansion
-                neighbor_scores = []
-                for neighbor in neighbors:
-                    # Skip already deeply explored paths
-                    if neighbor in visited and visited[neighbor] < len(path) - 2:
+
+                nbrs = traverser.data.adj_list.get(node, [])
+                nbr_scores = []
+                for nbr in nbrs:
+                    if nbr in visited and visited[nbr] < len(path) - 2:
                         continue
-                    
-                    # Get embedding and calculate similarity to target
-                    neighbor_emb = traverser.get_embedding(neighbor)
-                    similarity = traverser.get_similarity(neighbor_emb, target_emb)
-                    
-                    # Calculate exploration score with penalties/bonuses
-                    # - Penalty for revisiting nodes
-                    # - Bonus for nodes that might have been visited at worse depths
-                    revisit_penalty = 0
-                    if neighbor in visited:
-                        revisit_penalty = traverser.exploration_penalty
-                        # But if we're revisiting at a better depth, give a bonus
-                        if visited[neighbor] > len(path):
-                            revisit_penalty = -traverser.revisit_bonus
-                    
-                    # More penalties for frequently visited nodes to promote diversity
-                    frequency_penalty = 0
-                    if neighbor in visit_counts:
-                        frequency_penalty = (visit_counts[neighbor] / (step + 1)) * traverser.exploration_penalty
-                    
-                    # Combined score
-                    exploration_score = similarity - revisit_penalty - frequency_penalty
-                    
-                    neighbor_scores.append((neighbor, exploration_score))
-                
-                # Sort by score and take top candidates
-                neighbor_scores.sort(key=lambda x: x[1], reverse=True)
-                top_neighbors = neighbor_scores[:min(traverser.beam_width, len(neighbor_scores))]
-                
-                # Add each candidate to beams
-                for neighbor, _ in top_neighbors:
-                    # Update visit tracking
-                    visit_counts[neighbor] = visit_counts.get(neighbor, 0) + 1
-                    visited[neighbor] = min(visited.get(neighbor, float('inf')), len(path))
-                    
-                    # Create new path
-                    new_path = path + [neighbor]
-                    
-                    # Calculate score components
-                    path_length_penalty = len(new_path) * 0.01
-                    neighbor_emb = traverser.get_embedding(neighbor)
-                    similarity = traverser.get_similarity(neighbor_emb, target_emb)
-                    
-                    # Path diversity score - measures how different this path is from others
-                    # Higher is better for diversity
-                    diversity = sum(1 for node in new_path if visit_counts.get(node, 0) <= 1)
-                    diversity_score = diversity / len(new_path)
-                    
-                    # Combined score (lower is better)
-                    combined_score = path_length_penalty - similarity
-                    
-                    # Add to candidates - notice we keep diversity as a separate score
-                    next_beams.append((combined_score, diversity_score, new_path))
+                    emb = traverser.get_embedding(nbr)
+                    sim = traverser.get_similarity(emb, target_emb)
+                    revisit = traverser.exploration_penalty if nbr in visited else 0
+                    if nbr in visited and visited[nbr] > len(path):
+                        revisit = -traverser.revisit_bonus
+                    freq_pen = ((visit_counts[nbr]/(step+1))
+                               * traverser.exploration_penalty) if nbr in visit_counts else 0
+                    nbr_scores.append((nbr, sim - revisit - freq_pen))
+
+                nbr_scores.sort(key=lambda x: x[1], reverse=True)
+                top = nbr_scores[:min(traverser.beam_width, len(nbr_scores))]
+
+                for nbr, _ in top:
+                    visit_counts[nbr] = visit_counts.get(nbr, 0) + 1
+                    visited[nbr] = min(visited.get(nbr, float('inf')), len(path))
+                    new_path = path + [nbr]
+                    length_pen = len(new_path) * 0.01
+                    emb = traverser.get_embedding(nbr)
+                    sim = traverser.get_similarity(emb, target_emb)
+                    diversity = (sum(1 for x in new_path if visit_counts.get(x,0)<=1)
+                                 / len(new_path))
+                    combined = length_pen - sim
+                    next_beams.append((combined, diversity, new_path))
                     traverser.nodes_explored += 1
-                    
-                    # Early success detection
-                    if neighbor == target_idx:
+                    if nbr == target_idx:
                         return new_path, traverser.nodes_explored
-                    
-                # Count this as an expansion
+
                 expansions += 1
                 if expansions >= traverser.max_expansions:
                     break
-            
-            # If no valid expansions, break
+
             if not next_beams:
                 break
-                
-            # Select next beams with diversity promotion
-            # Sort first by score, then by diversity as a tiebreaker
+
             next_beams.sort(key=lambda x: (x[0], -x[1]))
-            
-            # Take top beams but ensure some diversity
-            diverse_beams = []
-            regular_beams = []
-            
-            for beam in next_beams:
-                if beam[1] > 0.5:  # High diversity score
-                    diverse_beams.append(beam)
-                else:
-                    regular_beams.append(beam)
-            
-            # Ensure at least some proportion of diverse paths in the mix
-            diverse_count = min(traverser.beam_width // 3, len(diverse_beams))
-            regular_count = traverser.beam_width - diverse_count
-            
-            current_beams = diverse_beams[:diverse_count] + regular_beams[:regular_count]
-        
-        # Return best path found
+            diverse = [b for b in next_beams if b[1] > 0.5]
+            regular = [b for b in next_beams if b[1] <= 0.5]
+            dcount = min(traverser.beam_width // 3, len(diverse))
+            rcount = traverser.beam_width - dcount
+            current_beams = diverse[:dcount] + regular[:rcount]
+
+            beam_front = {path[-1] for _, _, path in current_beams}
+            self.traverser.history.append((beam_front, None, step))
+
         if current_beams:
-            best_beam = min(current_beams, key=lambda x: x[0])
-            return best_beam[2], traverser.nodes_explored
-        
-        # No path found
+            best = min(current_beams, key=lambda x: x[0])[2]
+            return best, traverser.nodes_explored
         return [], traverser.nodes_explored
 
 class BidirectionalStrategy(TraversalStrategy):
-    """Bidirectional search strategy"""
-    
     def traverse(self, start_idx, target_idx, max_steps):
-        """Bidirectional search with embeddings guidance"""
+        self.traverser.history.clear()
         if start_idx == target_idx:
             return [start_idx], 1
-        
+
         traverser = self.traverser
         traverser.reset_exploration_counter()
-        
-        # Initialize forward and backward search queues
-        forward_queue = [(0, 0, start_idx, [start_idx])]
-        backward_queue = [(0, 0, target_idx, [target_idx])]
-        
-        # Visited sets
-        forward_visited = {start_idx: 0}
-        backward_visited = {target_idx: 0}
-        
-        # Best paths
-        forward_paths = {start_idx: [start_idx]}
-        backward_paths = {target_idx: [target_idx]}
-        
-        # For tracking the best meeting point
-        best_meeting_node = None
-        best_meeting_cost = float('inf')
-        
+
+        f_q = [(0,0,start_idx,[start_idx])]
+        b_q = [(0,0,target_idx,[target_idx])]
+        f_vis = {start_idx:0}
+        b_vis = {target_idx:0}
+        f_paths = {start_idx:[start_idx]}
+        b_paths = {target_idx:[target_idx]}
+        meet, best_cost = None, float('inf')
+
         for step in range(max_steps):
-            # Decide which direction to expand based on queue sizes
-            if len(forward_queue) <= len(backward_queue) and forward_queue:
-                # Expand forward
-                _, cost, node, path = heapq.heappop(forward_queue)
-                
-                # Check if we've found a meeting point
-                if node in backward_visited:
-                    total_cost = cost + backward_visited[node]
-                    if total_cost < best_meeting_cost:
-                        best_meeting_node = node
-                        best_meeting_cost = total_cost
-                
-                # Get neighbors
-                neighbors = traverser.sample_neighbors(node)
-                
-                # Score and expand neighbors
-                for neighbor in neighbors:
-                    new_cost = cost + 1
-                    
-                    # Only consider if we haven't found a better path already
-                    if neighbor not in forward_visited or new_cost < forward_visited[neighbor]:
-                        # Score this neighbor
-                        score = traverser.score_node(
-                            neighbor, target_idx, current_idx=node, path_cost=new_cost
-                        )
-                        
-                        # Update path
-                        new_path = path + [neighbor]
-                        forward_visited[neighbor] = new_cost
-                        forward_paths[neighbor] = new_path
-                        
-                        # Add to queue
-                        heapq.heappush(forward_queue, (score, new_cost, neighbor, new_path))
-                        
-                        # Check if this is a meeting point
-                        if neighbor in backward_visited:
-                            total_cost = new_cost + backward_visited[neighbor]
-                            if total_cost < best_meeting_cost:
-                                best_meeting_node = neighbor
-                                best_meeting_cost = total_cost
-            
-            elif backward_queue:
-                # Expand backward
-                _, cost, node, path = heapq.heappop(backward_queue)
-                
-                # Check if we've found a meeting point
-                if node in forward_visited:
-                    total_cost = cost + forward_visited[node]
-                    if total_cost < best_meeting_cost:
-                        best_meeting_node = node
-                        best_meeting_cost = total_cost
-                
-                # Get neighbors
-                neighbors = traverser.sample_neighbors(node)
-                
-                # Score and expand neighbors
-                for neighbor in neighbors:
-                    new_cost = cost + 1
-                    
-                    # Only consider if we haven't found a better path already
-                    if neighbor not in backward_visited or new_cost < backward_visited[neighbor]:
-                        # Score this neighbor
-                        score = traverser.score_node(
-                            neighbor, start_idx, current_idx=node, path_cost=new_cost
-                        )
-                        
-                        # Update path
-                        new_path = path + [neighbor]
-                        backward_visited[neighbor] = new_cost
-                        backward_paths[neighbor] = new_path
-                        
-                        # Add to queue
-                        heapq.heappush(backward_queue, (score, new_cost, neighbor, new_path))
-                        
-                        # Check if this is a meeting point
-                        if neighbor in forward_visited:
-                            total_cost = new_cost + forward_visited[neighbor]
-                            if total_cost < best_meeting_cost:
-                                best_meeting_node = neighbor
-                                best_meeting_cost = total_cost
-            
+            if f_q and (len(f_q) <= len(b_q)):
+                _, cost, node, path = heapq.heappop(f_q)
+                if node in b_vis:
+                    total = cost + b_vis[node]
+                    if total < best_cost:
+                        meet, best_cost = node, total
+                for nbr in traverser.sample_neighbors(node):
+                    nc = cost + 1
+                    if nbr not in f_vis or nc < f_vis[nbr]:
+                        score = traverser.score_node(nbr, target_idx,
+                                                     current_idx=node,
+                                                     path_cost=nc)
+                        new_p = path + [nbr]
+                        f_vis[nbr] = nc; f_paths[nbr] = new_p
+                        heapq.heappush(f_q,(score, nc, nbr, new_p))
+                        if nbr in b_vis:
+                            total = nc + b_vis[nbr]
+                            if total < best_cost:
+                                meet, best_cost = nbr, total
+
+            elif b_q:
+                _, cost, node, path = heapq.heappop(b_q)
+                if node in f_vis:
+                    total = cost + f_vis[node]
+                    if total < best_cost:
+                        meet, best_cost = node, total
+                for nbr in traverser.sample_neighbors(node):
+                    nc = cost + 1
+                    if nbr not in b_vis or nc < b_vis[nbr]:
+                        score = traverser.score_node(nbr, start_idx,
+                                                     current_idx=node,
+                                                     path_cost=nc)
+                        new_p = path + [nbr]
+                        b_vis[nbr] = nc; b_paths[nbr] = new_p
+                        heapq.heappush(b_q, (score, nc, nbr, new_p))
+                        if nbr in f_vis:
+                            total = nc + f_vis[nbr]
+                            if total < best_cost:
+                                meet, best_cost = nbr, total
             else:
-                # Both queues empty, no path exists
                 break
-            
-            # Early termination if we've found a good meeting point
-            if best_meeting_node is not None:
-                # Check if we can terminate
-                if ((not forward_queue or forward_queue[0][0] >= best_meeting_cost) and
-                    (not backward_queue or backward_queue[0][0] >= best_meeting_cost)):
-                    break
-        
-        # Reconstruct path if meeting point was found
-        if best_meeting_node is not None:
-            forward_path = forward_paths.get(best_meeting_node, [start_idx])
-            backward_path = backward_paths.get(best_meeting_node, [target_idx])
-            
-            # Combine paths (remove duplicate meeting point and reverse backward path)
-            full_path = forward_path + backward_path[::-1][1:]
-            
-            return full_path, traverser.nodes_explored
-        
-        # No path found
+
+            # record both frontiers
+            self.traverser.history.append((set(f_vis), set(b_vis), step))
+
+            if meet is not None and ((not f_q or f_q[0][0]>=best_cost)
+                                     and (not b_q or b_q[0][0]>=best_cost)):
+                break
+
+        if meet is not None:
+            fwd = f_paths[meet]
+            bwd = b_paths[meet]
+            return fwd + bwd[::-1][1:], traverser.nodes_explored
+
         return [], traverser.nodes_explored
 
 class HybridStrategy(TraversalStrategy):
-    """Hybrid search combining beam search and bidirectional search"""
-    
     def traverse(self, start_idx, target_idx, max_steps):
-        """Hybrid search combining both strategies based on similarity"""
-        traverser = self.traverser
-        
-        # Calculate similarity to determine best approach
-        start_emb = traverser.get_embedding(start_idx)
-        target_emb = traverser.get_embedding(target_idx)
-        similarity = F.cosine_similarity(start_emb.unsqueeze(0), target_emb.unsqueeze(0)).item()
-        
-        # Add Word2Vec similarity if available
-        if traverser.use_word2vec_similarity:
-            w2v_sim = traverser.get_word2vec_similarity(start_idx, target_idx)
-            similarity = (similarity * 0.6) + (w2v_sim * 0.4)
-        
-        # Choose search strategy based on similarity
-        if similarity > 0.5:  # Nodes are semantically close
-            # Try beam search first (faster for closely related nodes)
-            if hasattr(traverser, 'use_adaptive_beam') and traverser.use_adaptive_beam:
-                beam_strategy = AdaptiveBeamStrategy(traverser)
-            else:
-                beam_strategy = BeamStrategy(traverser)
-                
-            path, nodes1 = beam_strategy.traverse(
-                start_idx, target_idx, max_steps=max_steps//2
-            )
-            
-            if path and path[-1] == target_idx:
-                return path, nodes1
-            
-            # Fall back to bidirectional search
-            bi_strategy = BidirectionalStrategy(traverser)
-            path, nodes2 = bi_strategy.traverse(
-                start_idx, target_idx, max_steps=max_steps
-            )
-            
-            return path, nodes1 + nodes2
+        self.traverser.history.clear()
+
+        emb1 = self.traverser.get_embedding(start_idx)
+        emb2 = self.traverser.get_embedding(target_idx)
+        sim = F.cosine_similarity(emb1.unsqueeze(0), emb2.unsqueeze(0)).item()
+        if self.traverser.use_word2vec_similarity:
+            w2v = self.traverser.get_word2vec_similarity(start_idx, target_idx)
+            sim = 0.6*sim + 0.4*w2v
+
+        if sim > 0.5:
+            strat = (AdaptiveBeamStrategy(self.traverser)
+                     if self.traverser.use_adaptive_beam
+                     else BeamStrategy(self.traverser))
+            p1, n1 = strat.traverse(start_idx, target_idx, max_steps//2)
+            if p1 and p1[-1] == target_idx:
+                return p1, n1
+            p2, n2 = BidirectionalStrategy(self.traverser).traverse(
+                        start_idx, target_idx, max_steps)
+            return p2, n1 + n2
         else:
-            # For semantically distant nodes, use bidirectional search
-            bi_strategy = BidirectionalStrategy(traverser)
-            path, nodes = bi_strategy.traverse(
-                start_idx, target_idx, max_steps=max_steps
-            )
-            
-            return path, nodes
+            return BidirectionalStrategy(self.traverser).traverse(
+                        start_idx, target_idx, max_steps)
 
 class GraphTraverser:
     """
@@ -426,6 +251,7 @@ class GraphTraverser:
                  max_memory_nodes=1000, num_neighbors=20, num_hops=2,
                  exploration_penalty=0.1, revisit_bonus=0.05, max_expansions=50,
                  use_adaptive_beam=False):
+
         self.model = model
         self.data = data
         self.device = device
@@ -443,6 +269,8 @@ class GraphTraverser:
         
         # State tracking
         self.cache = {}  # Cache for node embeddings
+        self.nodes_explored = 0
+        self.history = []        # ← will hold tuples of (forward_frontier, backward_frontier, step)
         self.nodes_explored = 0
         
         # Get Word2Vec model from the GNN model if available
@@ -469,7 +297,13 @@ class GraphTraverser:
             print("Using Word2Vec semantic similarity for traversal")
         else:
             print("Word2Vec not available, using only GNN embeddings")
+    def get_history(self):
+        """Return the recorded (forward, backward, step) tuples."""
+        return self.history
     
+    def get_traversal_history(self):
+        """Return the recorded (forward, backward, step) history"""
+        return self.history
     def reset_exploration_counter(self):
         """Reset the counter for nodes explored during traversal"""
         self.nodes_explored = 0

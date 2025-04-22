@@ -5,7 +5,8 @@ import numpy as np
 import random
 
 from models import WikiGraphSAGE
-from utils import load_graph_data
+#from utils import load_graph_data
+from utils.data import load_graph_data_no_pandas as load_graph_data
 from utils.wikibuilder import create_wiki_edge_list
 
 def parse_args():

@@ -1,0 +1,2097 @@
+<label for="traversalMethod">Traversal Method:</label>
+                    <select class="form-select" id="traversalMethod">
+                        <option value="auto">Auto (Best Method)</option>
+                        <option value="beam">Beam Search (GNN)</option>
+                        <option value="bidirectional">Bidirectional Search (GNN)</option>
+                        <option value="hybrid">Hybrid Search (GNN)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="maxSteps">Max Steps:</label>
+                    <input type="number" class="form-control" id="maxSteps" value="{{ config.max_steps }}">
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="beamWidth">Beam Width:</label>
+                    <input type="number" class="form-control" id="beamWidth" value="{{ config.beam_width }}" min="1" max="10">
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="heuristicWeight">Heuristic Weight:</label>
+                    <input type="number" class="form-control" id="heuristicWeight" value="{{ config.heuristic_weight }}" min="0.1" max="5.0" step="0.1">
+                </div>
+                
+                <button class="btn btn-primary w-100" id="traverseBtn">Find Path</button>
+                
+                <hr>
+                
+                <div id="statsContainer" class="mb-3" style="display: none;">
+                    <h4>Statistics</h4>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <th>Nodes Explored (GNN)</th>
+                                    <td id="gnnNodesExplored">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Nodes Explored (BFS)</th>
+                                    <td id="bfsNodesExplored">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Path Length (GNN)</th>
+                                    <td id="gnnPathLength">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Path Length (BFS)</th>
+                                    <td id="bfsPathLength">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Time Taken (GNN)</th>
+                                    <td id="gnnTime">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Time Taken (BFS)</th>
+                                    <td id="bfsTime">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Efficiency Ratio</th>
+                                    <td id="efficiencyRatio">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h3>Graph Properties</h3>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <th>Nodes</th>
+                                <td>{{ graph_stats.num_nodes }}</td>
+                            </tr>
+                            <tr>
+                                <th>Edges</th>
+                                <td>{{ graph_stats.num_edges }}</td>
+                            </tr>
+                            <tr>
+                                <th>Avg. Degree</th>
+                                <td>{{ "%.2f"|format(graph_stats.avg_degree) }}</td>
+                            </tr>
+                            {% if graph_stats.density is defined %}
+                            <tr>
+                                <th>Density</th>
+                                <td>{{ "%.4f"|format(graph_stats.density) }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if graph_stats.clustering is defined %}
+                            <tr>
+                                <th>Clustering</th>
+                                <td>{{ graph_stats.clustering }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if graph_stats.connected_components is defined %}
+                            <tr>
+                                <th>Connected Components</th>
+                                <td>{{ graph_stats.connected_components }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if graph_stats.largest_component_size is defined %}
+                            <tr>
+                                <th>Largest Component</th>
+                                <td>{{ graph_stats.largest_component_size }} ({{ graph_stats.largest_component_percentage }}%)</td>
+                            </tr>
+                            {% endif %}
+                            {% if graph_stats.diameter is defined %}
+                            <tr>
+                                <th>Diameter</th>
+                                <td>{{ graph_stats.diameter }}</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h3 id="visualizationTitle">Graph Visualization</h3>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="animationToggle" checked>
+                    <label class="form-check-label" for="animationToggle">Show Animation</label>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="graphVisualization" style="height: 600px; background-color: #f8f9fa; border-radius: 4px;"></div>
+                
+                <div class="mt-3">
+                    <div class="progress" id="animationProgress" style="display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
+                    <div class="mt-2 d-flex justify-content-between" id="animationControls" style="display: none;">
+                        <button class="btn btn-sm btn-outline-secondary" id="animationPrevBtn">
+                            <i class="bi bi-chevron-left"></i> Previous
+                        </button>
+                        <div>
+                            <span id="currentStep">Step 0</span> / <span id="totalSteps">0</span>
+                            <button class="btn btn-sm btn-outline-primary mx-2" id="animationPlayBtn">
+                                <i class="bi bi-play-fill"></i> Play
+                            </button>
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" id="animationNextBtn">
+                            Next <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h4>GNN Path</h4>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="gnnPath" class="list-group path-container" style="max-height: 300px; overflow-y: auto;">
+                                    <div class="list-group-item">Select nodes and run traversal to see path</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h4>BFS Path</h4>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="bfsPath" class="list-group path-container" style="max-height: 300px; overflow-y: auto;">
+                                    <div class="list-group-item">Select nodes and run traversal to see path</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h4>Legend</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <ul class="list-group">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                Source Node
+                                                <span class="badge rounded-circle" style="background-color: #00FF00; width: 20px; height: 20px;"></span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                Target Node
+                                                <span class="badge rounded-circle" style="background-color: #FF0000; width: 20px; height: 20px;"></span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                GNN Path Node
+                                                <span class="badge rounded-circle" style="background-color: #198754; width: 20px; height: 20px;"></span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <ul class="list-group">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                BFS Path Node
+                                                <span class="badge rounded-circle" style="background-color: #dc3545; width: 20px; height: 20px;"></span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                Frontier Node (GNN/BFS)
+                                                <span class="badge rounded-circle" style="background-color: #1E90FF; width: 20px; height: 20px;"></span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                Unvisited Node
+                                                <span class="badge rounded-circle" style="background-color: #808080; width: 20px; height: 20px;"></span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration Modal -->
+<div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configModalLabel">Advanced Configuration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/config" method="post" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <h6>Graph Settings</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="maxNodesConfig">Max Nodes:</label>
+                                <input type="number" class="form-control" id="maxNodesConfig" name="max_nodes" value="{{ config.max_nodes }}">
+                                <small class="form-text text-muted">Maximum number of nodes to load from the graph</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="layoutIterationsConfig">Layout Iterations:</label>
+                                <input type="number" class="form-control" id="layoutIterationsConfig" name="layout_iterations" value="{{ config.layout_iterations }}">
+                                <small class="form-text text-muted">Number of iterations for graph layout algorithm</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6>Algorithm Settings</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="beamWidthConfig">Beam Width:</label>
+                                <input type="number" class="form-control" id="beamWidthConfig" name="beam_width" value="{{ config.beam_width }}">
+                                <small class="form-text text-muted">Number of paths to explore in parallel</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="heuristicWeightConfig">Heuristic Weight:</label>
+                                <input type="number" step="0.1" class="form-control" id="heuristicWeightConfig" name="heuristic_weight" value="{{ config.heuristic_weight }}">
+                                <small class="form-text text-muted">Weight of the heuristic component</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="maxStepsConfig">Max Steps:</label>
+                                <input type="number" class="form-control" id="maxStepsConfig" name="max_steps" value="{{ config.max_steps }}">
+                                <small class="form-text text-muted">Maximum number of steps in path finding</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6>Visualization Settings</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visualizeExplorationConfig" name="visualize_exploration" value="1" {% if config.visualize_exploration %}checked{% endif %}>
+                                <label class="form-check-label" for="visualizeExplorationConfig">
+                                    Track exploration history (enables step-by-step animation)
+                                </label>
+                                <small class="form-text text-muted d-block">May increase memory usage and response time</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6>Data Files</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="edgeFileConfig">Edge File:</label>
+                                <input type="file" class="form-control" id="edgeFileConfig" name="edge_file">
+                                <small class="form-text text-muted">Current: {{ config.edge_file }}</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="modelPathConfig">Model File:</label>
+                                <input type="file" class="form-control" id="modelPathConfig" name="model_path">
+                                <small class="form-text text-muted">Current: {{ config.model_path }}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="errorModalLabel">Error</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="errorMessage" class="alert alert-danger"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Node Info Modal -->
+<div class="modal fade" id="nodeInfoModal" tabindex="-1" aria-labelledby="nodeInfoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="nodeInfoModalLabel">Node Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="nodeInfoLoading" class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div id="nodeInfoContent" style="display: none;">
+                    <h4 id="nodeTitle"></h4>
+                    <div id="nodeUrl" class="mb-3"></div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Centrality Metrics</h5>
+                                </div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm mb-0">
+                                        <tbody id="centralityMetrics">
+                                            <!-- Centrality metrics will be inserted here -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Node Properties</h5>
+                                </div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm mb-0">
+                                        <tbody id="nodeProperties">
+                                            <!-- Node properties will be inserted here -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5>Neighbors <span id="neighborCount" class="badge bg-secondary"></span></h5>
+                    <div id="neighborsList" class="list-group" style="max-height: 200px; overflow-y: auto;">
+                        <!-- Neighbors will be inserted here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
+<style>
+    .path-container {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+    }
+    
+    .node {
+        stroke: #fff;
+        stroke-width: 1.5px;
+        cursor: pointer;
+    }
+    
+    .link {
+        stroke: #999;
+        stroke-opacity: 0.6;
+    }
+    
+    .path-link {
+        stroke-width: 2px;
+    }
+    
+    .gnn-path {
+        stroke: #198754;
+    }
+    
+    .bfs-path {
+        stroke: #dc3545;
+    }
+    
+    .tooltip {
+        position: absolute;
+        padding: 5px 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        border-radius: 4px;
+        pointer-events: none;
+        font-size: 12px;
+        z-index: 1000;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // DOM elements
+        const sourceNode = document.getElementById('sourceNode');
+        const targetNode = document.getElementById('targetNode');
+        const traversalMethod = document.getElementById('traversalMethod');
+        const maxSteps = document.getElementById('maxSteps');
+        const beamWidth = document.getElementById('beamWidth');
+        const heuristicWeight = document.getElementById('heuristicWeight');
+        const traverseBtn = document.getElementById('traverseBtn');
+        const randomPairBtn = document.getElementById('randomPairBtn');
+        const statsContainer = document.getElementById('statsContainer');
+        
+        // Results elements
+        const gnnPathLength = document.getElementById('gnnPathLength');
+        const gnnNodesExplored = document.getElementById('gnnNodesExplored');
+        const bfsPathLength = document.getElementById('bfsPathLength');
+        const bfsNodesExplored = document.getElementById('bfsNodesExplored');
+        const efficiencyRatio = document.getElementById('efficiencyRatio');
+        const gnnTime = document.getElementById('gnnTime');
+        const bfsTime = document.getElementById('bfsTime');
+        const gnnPath = document.getElementById('gnnPath');
+        const bfsPath = document.getElementById('bfsPath');
+        
+        // Animation controls
+        const animationToggle = document.getElementById('animationToggle');
+        const animationProgress = document.getElementById('animationProgress');
+        const animationControls = document.getElementById('animationControls');
+        const animationPrevBtn = document.getElementById('animationPrevBtn');
+        const animationNextBtn = document.getElementById('animationNextBtn');
+        const animationPlayBtn = document.getElementById('animationPlayBtn');
+        const currentStep = document.getElementById('currentStep');
+        const totalSteps = document.getElementById('totalSteps');
+        
+        // Add event listeners
+        traverseBtn.addEventListener('click', findPath);
+        randomPairBtn.addEventListener('click', getRandomPair);
+        animationPrevBtn.addEventListener('click', previousStep);
+        animationNextBtn.addEventListener('click', nextStep);
+        animationPlayBtn.addEventListener('click', toggleAnimation);
+        
+        // Visualization state
+        let graphData = null;
+        let currentStepIndex = 0;
+        let animationData = [];
+        let animationTimer = null;
+        let isAnimationPlaying = false;
+        
+        // Update animation controls visibility based on toggle
+        animationToggle.addEventListener('change', function() {
+            updateAnimationControlsVisibility();
+        });
+        
+        // Find path between nodes
+        function findPath() {
+            const source = sourceNode.value;
+            const target = targetNode.value;
+            const method = traversalMethod.value;
+            const steps = maxSteps.value;
+            const beam = beamWidth.value;
+            const heuristic = heuristicWeight.value;
+            
+            if (!source || !target) {
+                showError('Please select both source and target nodes');
+                return;
+            }
+            
+            if (source === target) {
+                showError('Source and target nodes must be different');
+                return;
+            }
+            
+            // Show loading
+            traverseBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Finding Path...';
+            traverseBtn.disabled = true;
+            
+            // Reset animation state
+            resetAnimation();
+            
+            // Make API request
+            fetch('/traverse', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    source_id: source,
+                    target_id: target,
+                    method: method,
+                    max_steps: steps,
+                    beam_width: beam,
+                    heuristic_weight: heuristic
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button
+                traverseBtn.innerHTML = 'Find Path';
+                traverseBtn.disabled = false;
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                // Show results
+                displayResults(data);
+                
+                // Show stats
+                statsContainer.style.display = 'block';
+                
+                // Process data for visualization
+                initializeVisualization(data);
+            })
+            .catch(error => {
+                traverseBtn.innerHTML = 'Find Path';
+                traverseBtn.disabled = false;
+                showError('Error: ' + error.message);
+            });
+        }
+        
+        // Get random node pair
+        function getRandomPair() {
+            fetch('/random_nodes')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    // Set source and target nodes
+                    setSelectValue(sourceNode, data.source_id);
+                    setSelectValue(targetNode, data.target_id);
+                    
+                    // Show expected path length
+                    showMessage(`Found random pair with expected path length: ${data.expected_path_length}`);
+                })
+                .catch(error => {
+                    showError('Error: ' + error.message);
+                });
+        }
+        
+        // Helper to set select value with search
+        function setSelectValue(selectElement, value) {
+            selectElement.value = value;
+            
+            // If the value doesn't exist, find the option by text search
+            if (selectElement.value !== value) {
+                for (let i = 0; i < selectElement.options.length; i++) {
+                    if (selectElement.options[i].text.includes(value)) {
+                        selectElement.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Display traversal results
+        function displayResults(data) {
+            // Update table
+            gnnPathLength.textContent = data.path_length;
+            gnnNodesExplored.textContent = data.nodes_explored;
+            bfsPathLength.textContent = data.bfs_path_length;
+            bfsNodesExplored.textContent = data.bfs_nodes_explored;
+            efficiencyRatio.textContent = data.efficiency_ratio.toFixed(2) + 'x';
+            
+            // Update time metrics if available
+            if (data.time_taken !== undefined) {
+                gnnTime.textContent = data.time_taken.toFixed(3) + 's';
+            }
+            
+            if (data.bfs_time_taken !== undefined) {
+                bfsTime.textContent = data.bfs_time_taken.toFixed(3) + 's';
+            }
+            
+            // Display paths
+            displayPath(gnnPath, data.path);
+            displayPath(bfsPath, data.bfs_path);
+        }
+        
+        // Display a path
+        function displayPath(container, path) {
+            container.innerHTML = '';
+            
+            if (!path || path.length === 0) {
+                container.innerHTML = '<div class="list-group-item list-group-item-danger">No path found</div>';
+                return;
+            }
+            
+            for (let i = 0; i < path.length; i++) {
+                const node = path[i];
+                let item = document.createElement('div');
+                item.className = 'list-group-item';
+                
+                if (i === 0) {
+                    item.className += ' list-group-item-success';
+                } else if (i === path.length - 1) {
+                    item.className += ' list-group-item-primary';
+                }
+                
+                let content = `<strong>${i+1}.</strong> ${node.title}`;
+                
+                if (node.url) {
+                    content += ` <a href="${node.url}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>`;
+                }
+                
+                // Add button to show node info
+                content += ` <button type="button" class="btn btn-sm btn-outline-secondary float-end node-info-btn" data-node-id="${node.id}">
+                                <i class="bi bi-info-circle"></i>
+                            </button>`;
+                
+                item.innerHTML = content;
+                container.appendChild(item);
+            }
+            
+            // Add event listeners to node info buttons
+            const nodeInfoBtns = container.querySelectorAll('.node-info-btn');
+            nodeInfoBtns.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const nodeId = btn.getAttribute('data-node-id');
+                    showNodeInfo(nodeId);
+                });
+            });
+        }
+        
+        // Show node information
+        function showNodeInfo(nodeId) {
+            // Show loading spinner
+            document.getElementById('nodeInfoLoading').style.display = 'block';
+            document.getElementById('nodeInfoContent').style.display = 'none';
+            
+            // Show modal
+            const nodeInfoModal = new bootstrap.Modal(document.getElementById('nodeInfoModal'));
+            nodeInfoModal.show();
+            
+            // Fetch node info
+            fetch(`/node_info?id=${nodeId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    // Update modal content
+                    document.getElementById('nodeTitle').textContent = data.title;
+                    
+                    // URL
+                    const nodeUrlElement = document.getElementById('nodeUrl');
+                    if (data.url) {
+                        nodeUrlElement.innerHTML = `<a href="${data.url}" target="_blank">${data.url} <i class="bi bi-box-arrow-up-right"></i></a>`;
+                    } else {
+                        nodeUrlElement.innerHTML = 'No URL available';
+                    }
+                    
+                    // Centrality metrics
+                    const centralityMetricsElement = document.getElementById('centralityMetrics');
+                    centralityMetricsElement.innerHTML = '';
+                    
+                    if (data.centrality) {
+                        for (const [key, value] of Object.entries(data.centrality)) {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <th>${key.charAt(0).toUpperCase() + key.slice(1)}</th>
+                                <td>${value}</td>
+                            `;
+                            centralityMetricsElement.appendChild(row);
+                        }
+                    } else {
+                        centralityMetricsElement.innerHTML = '<tr><td colspan="2" class="text-center">No centrality metrics available</td></tr>';
+                    }
+                    
+                    // Node properties
+                    const nodePropertiesElement = document.getElementById('nodeProperties');
+                    nodePropertiesElement.innerHTML = '';
+                    
+                    const properties = [
+                        { key: 'id', label: 'ID' },
+                        { key: 'neighbor_count', label: 'Number of Neighbors' }
+                    ];
+                    
+                    properties.forEach(prop => {
+                        if (data[prop.key] !== undefined) {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <th>${prop.label}</th>
+                                <td>${data[prop.key]}</td>
+                            `;
+                            nodePropertiesElement.appendChild(row);
+                        }
+                    });
+                    
+                    // Embedding sample
+                    if (data.embedding_sample) {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <th>Embedding Sample</th>
+                            <td>[${data.embedding_sample.map(v => v.toFixed(3)).join(', ')}]</td>
+                        `;
+                        nodePropertiesElement.appendChild(row);
+                    }
+                    
+                    // Neighbors
+                    const neighborsListElement = document.getElementById('neighborsList');
+                    neighborsListElement.innerHTML = '';
+                    
+                    if (data.neighbors && data.neighbors.length > 0) {
+                        data.neighbors.forEach(neighbor => {
+                            const item = document.createElement('button');
+                            item.className = 'list-group-item list-group-item-action';
+                            item.innerHTML = neighbor.title;
+                            item.setAttribute('data-node-id', neighbor.id);
+                            
+                            // Add click event to show neighbor info
+                            item.addEventListener('click', function() {
+                                showNodeInfo(neighbor.id);
+                            });
+                            
+                            neighborsListElement.appendChild(item);
+                        });
+                    } else {
+                        neighborsListElement.innerHTML = '<div class="list-group-item">No neighbors found</div>';
+                    }
+                    
+                    // Update neighbor count
+                    document.getElementById('neighborCount').textContent = data.neighbor_count || 0;
+                    
+                    // Hide loading, show content
+                    document.getElementById('nodeInfoLoading').style.display = 'none';
+                    document.getElementById('nodeInfoContent').style.display = 'block';
+                })
+                .catch(error => {
+                    document.getElementById('nodeInfoLoading').style.display = 'none';
+                    showError('Error fetching node info: ' + error.message);
+                });
+        }
+        
+        // Initialize visualization with provided data
+        function initializeVisualization(data) {
+            // Store the graph data
+            graphData = data;
+            
+            // Prepare animation data
+            prepareAnimationData(data);
+            
+            // Initialize and display the graph
+            if (animationToggle.checked && animationData.length > 0) {
+                // Show first frame
+                renderVisualizationStep(0);
+                
+                // Update animation controls
+                updateAnimationControls();
+            } else {
+                // Show final state only
+                renderVisualizationFinal();
+            }
+        }
+        
+        // Prepare animation data from traversal results
+        function prepareAnimationData(data) {
+            animationData = [];
+            
+            // Check if we have exploration history
+            if (data.bfs_exploration_history && data.bfs_exploration_history.length > 0) {
+                // Combine BFS and GNN histories
+                const bfsHistory = data.bfs_exploration_history || [];
+                const gnnHistory = data.gnn_exploration_history || [];
+                
+                // Add initial state
+                animationData.push({
+                    step: 0,
+                    title: 'Initial State',
+                    bfs_frontier_forward: [data.bfs_path[0]?.id].filter(Boolean),
+                    bfs_frontier_backward: [data.bfs_path[data.bfs_path.length - 1]?.id].filter(Boolean),
+                    gnn_frontier_forward: [data.path[0]?.id].filter(Boolean),
+                    gnn_frontier_backward: [data.path[data.path.length - 1]?.id].filter(Boolean),
+                    traversed_edges: [],
+                    bfs_path: [],
+                    gnn_path: []
+                });
+                
+                // Add exploration steps
+                const maxSteps = Math.max(bfsHistory.length, gnnHistory.length);
+                
+                for (let i = 0; i < maxSteps; i++) {
+                    const bfsStep = bfsHistory[i] || null;
+                    const gnnStep = gnnHistory[i] || null;
+                    
+                    animationData.push({
+                        step: i + 1,
+                        title: `Step ${i + 1}`,
+                        bfs_frontier_forward: bfsStep ? bfsStep.forward_frontier.map(idx => data.bfs_path.find(n => n.id === idx.toString() || n.id === idx)?.id).filter(Boolean) : [],
+                        bfs_frontier_backward: bfsStep ? bfsStep.backward_frontier.map(idx => data.bfs_path.find(n => n.id === idx.toString() || n.id === idx)?.id).filter(Boolean) : [],
+                        gnn_frontier_forward: gnnStep ? gnnStep.forward_frontier.map(idx => data.path.find(n => n.id === idx.toString() || n.id === idx)?.id).filter(Boolean) : [],
+                        gnn_frontier_backward: gnnStep ? gnnStep.backward_frontier.map(idx => data.path.find(n => n.id === idx.toString() || n.id === idx)?.id).filter(Boolean) : [],
+                        traversed_edges: bfsStep ? bfsStep.traversed_edges : [],
+                        bfs_path: [],
+                        gnn_path: []
+                    });
+                }
+                
+                // Add final state with found paths
+                animationData.push({
+                    step: maxSteps + 1,
+                    title: 'Final Paths',
+                    bfs_frontier_forward: [],
+                    bfs_frontier_backward: [],
+                    gnn_frontier_forward: [],
+                    gnn_frontier_backward: [],
+                    traversed_edges: [],
+                    bfs_path: data.bfs_path.map(n => n.id),
+                    gnn_path: data.path.map(n => n.id)
+                });
+            } else {
+                // No exploration history, just show final state
+                animationData.push({
+                    step: 0,
+                    title: 'Final Paths',
+                    bfs_frontier_forward: [],
+                    bfs_frontier_backward: [],
+                    gnn_frontier_forward: [],
+                    gnn_frontier_backward: [],
+                    traversed_edges: [],
+                    bfs_path: data.bfs_path.map(n => n.id),
+                    gnn_path: data.path.map(n => n.id)
+                });
+            }
+        }
+        
+        // Update animation controls visibility
+        function updateAnimationControlsVisibility() {
+            if (animationToggle.checked && animationData.length > 1) {
+                animationProgress.style.display = 'block';
+                animationControls.style.display = 'flex';
+            } else {
+                animationProgress.style.display = 'none';
+                animationControls.style.display = 'none';
+                
+                // If toggled off, show final state
+                if (graphData) {
+                    renderVisualizationFinal();
+                }
+            }
+        }
+        
+        // Update animation controls state
+        function updateAnimationControls() {
+            // Update progress bar
+            const progressBar = animationProgress.querySelector('.progress-bar');
+            const percentage = (currentStepIndex / (animationData.length - 1)) * 100;
+            progressBar.style.width = `${percentage}%`;
+            progressBar.setAttribute('aria-valuenow', percentage);
+            progressBar.textContent = `${Math.round(percentage)}%`;
+            
+            // Update step counter
+            currentStep.textContent = `Step ${currentStepIndex}`;
+            totalSteps.textContent = (animationData.length - 1).toString();
+            
+            // Update button states
+            animationPrevBtn.disabled = currentStepIndex === 0;
+            animationNextBtn.disabled = currentStepIndex === animationData.length - 1;
+            
+            // Update visualization title
+            document.getElementById('visualizationTitle').textContent = `Graph Visualization: ${animationData[currentStepIndex].title}`;
+            
+            // Update animation controls visibility
+            updateAnimationControlsVisibility();
+        }
+        
+        // Render visualization for current animation step
+        function renderVisualizationStep(stepIndex) {
+            if (!graphData || !animationData || stepIndex >= animationData.length) {
+                return;
+            }
+            
+            currentStepIndex = stepIndex;
+            const stepData = animationData[stepIndex];
+            
+            // Create nodes and links arrays for D3
+            const nodes = [];
+            const links = [];
+            
+            // Process nodes
+            if (graphData.path && graphData.bfs_path) {
+                // Get source and target IDs
+                const sourceId = graphData.path[0]?.id;
+                const targetId = graphData.path[graphData.path.length - 1]?.id;
+                
+                // Add nodes with proper colors based on step data
+                for (const [nodeId, position] of Object.entries(graphData.layout || {})) {
+                    // Determine node type for coloring
+                    let nodeType = 'regular';
+                    
+                    if (nodeId === sourceId) {
+                        nodeType = 'source';
+                    } else if (nodeId === targetId) {
+                        nodeType = 'target';
+                    } else if (stepData.gnn_path.includes(nodeId)) {
+                        nodeType = 'gnn_path';
+                    } else if (stepData.bfs_path.includes(nodeId)) {
+                        nodeType = 'bfs_path';
+                    } else if (stepData.gnn_frontier_forward.includes(nodeId) || stepData.gnn_frontier_backward.includes(nodeId)) {
+                        nodeType = 'gnn_frontier';
+                    } else if (stepData.bfs_frontier_forward.includes(nodeId) || stepData.bfs_frontier_backward.includes(nodeId)) {
+                        nodeType = 'bfs_frontier';
+                    }
+                    
+                    // Find node title
+                    const nodeInfo = graphData.path.find(n => n.id === nodeId) || 
+                                  graphData.bfs_path.find(n => n.id === nodeId) || 
+                                  { id: nodeId, title: `Node ${nodeId}` };
+                    
+                    nodes.push({
+                        id: nodeId,
+                        title: nodeInfo.title,
+                        x: position.x * 1000,
+                        y: position.y * 1000,
+                        type: nodeType
+                    });
+                }
+                
+                // Add links
+                if (stepData.traversed_edges && stepData.traversed_edges.length > 0) {
+                    // Add traversed edges
+                    for (const edge of stepData.traversed_edges) {
+                        const sourceIdx = edge[0];
+                        const targetIdx = edge[1];
+                        
+                        // Convert to node IDs
+                        const sourceNodeId = sourceIdx.toString();
+                        const targetNodeId = targetIdx.toString();
+                        
+                        links.push({
+                            source: sourceNodeId,
+                            target: targetNodeId,
+                            type: 'traversed'
+                        });
+                    }
+                } else {
+                    // Add all edges as regular links
+                    const edgeSet = new Set();
+                    
+                    // Function to safely add links
+                    const addLink = (sourceId, targetId) => {
+                        const edgeKey = `${sourceId}-${targetId}`;
+                        const revEdgeKey = `${targetId}-${sourceId}`;
+                        
+                        // Check if we already added this edge
+                        if (!edgeSet.has(edgeKey) && !edgeSet.has(revEdgeKey)) {
+                            links.push({
+                                source: sourceId,
+                                target: targetId,
+                                type: 'regular'
+                            });
+                            
+                            edgeSet.add(edgeKey);
+                        }
+                    };
+                    
+                    // Add GNN path links
+                    if (stepData.gnn_path.length > 1) {
+                        for (let i = 0; i < stepData.gnn_path.length - 1; i++) {
+                            addLink(stepData.gnn_path[i], stepData.gnn_path[i + 1]);
+                        }
+                    }
+                    
+                    // Add BFS path links
+                    if (stepData.bfs_path.length > 1) {
+                        for (let i = 0; i < stepData.bfs_path.length - 1; i++) {
+                            addLink(stepData.bfs_path[i], stepData.bfs_path[i + 1]);
+                        }
+                    }
+                    
+                    // Add other links from frontiers
+                    const frontiers = [
+                        stepData.gnn_frontier_forward,
+                        stepData.gnn_frontier_backward,
+                        stepData.bfs_frontier_forward,
+                        stepData.bfs_frontier_backward
+                    ];
+                    
+                    for (const frontier of frontiers) {
+                        for (const nodeId of frontier) {
+                            // Get neighbors for this node (this is an approximation as we don't have full adjacency info)
+                            const neighbors = graphData.path
+                                .filter(n => n.id === nodeId)
+                                .flatMap(n => n.neighbors || [])
+                                .map(n => n.id);
+                                
+                            for (const neighborId of neighbors) {
+                                addLink(nodeId, neighborId);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Render the graph
+            renderD3Graph(nodes, links);
+            
+            // Update animation controls
+            updateAnimationControls();
+        }
+        
+        // Render final visualization state
+        function renderVisualizationFinal() {
+            if (!graphData) {
+                return;
+            }
+            
+            // Create nodes and links arrays for D3
+            const nodes = [];
+            const links = [];
+            
+            // Get source and target IDs
+            const sourceId = graphData.path[0]?.id;
+            const targetId = graphData.path[graphData.path.length - 1]?.id;
+            
+            // Process nodes
+            for (const [nodeId, position] of Object.entries(graphData.layout || {})) {
+                // Determine node type for coloring
+                let nodeType = 'regular';
+                let nodeInfo = null;
+                
+                if (nodeId === sourceId) {
+                    nodeType = 'source';
+                    nodeInfo = graphData.path[0];
+                } else if (nodeId === targetId) {
+                    nodeType = 'target';
+                    nodeInfo = graphData.path[graphData.path.length - 1];
+                } else {
+                    // Check if node is in GNN path
+                    const gnnNodeIndex = graphData.path.findIndex(n => n.id === nodeId);
+                    if (gnnNodeIndex !== -1) {
+                        nodeType = 'gnn_path';
+                        nodeInfo = graphData.path[gnnNodeIndex];
+                    } else {
+                        // Check if node is in BFS path
+                        const bfsNodeIndex = graphData.bfs_path.findIndex(n => n.id === nodeId);
+                        if (bfsNodeIndex !== -1) {
+                            nodeType = 'bfs_path';
+                            nodeInfo = graphData.bfs_path[bfsNodeIndex];
+                        }
+                    }
+                }
+                
+                // If no info was found, create minimal info
+                if (!nodeInfo) {
+                    nodeInfo = { id: nodeId, title: `Node ${nodeId}` };
+                }
+                
+                nodes.push({
+                    id: nodeId,
+                    title: nodeInfo.title,
+                    x: position.x * 1000,
+                    y: position.y * 1000,
+                    type: nodeType
+                });
+            }
+            
+            // Process links
+            const edgeSet = new Set();
+            
+            // Helper to add an edge only once
+            const addLink = (sourceId, targetId, type = 'regular') => {
+                const edgeKey = `${sourceId}-${targetId}`;
+                const revEdgeKey = `${targetId}-${sourceId}`;
+                
+                if (!edgeSet.has(edgeKey) && !edgeSet.has(revEdgeKey)) {
+                    links.push({
+                        source: sourceId,
+                        target: targetId,
+                        type: type
+                    });
+                    
+                    edgeSet.add(edgeKey);
+                }
+            };
+            
+            // Add GNN path links
+            if (graphData.path && graphData.path.length > 1) {
+                for (let i = 0; i < graphData.path.length - 1; i++) {
+                    addLink(graphData.path[i].id, graphData.path[i + 1].id, 'gnn_path');
+                }
+            }
+            
+            // Add BFS path links
+            if (graphData.bfs_path && graphData.bfs_path.length > 1) {
+                for (let i = 0; i < graphData.bfs_path.length - 1; i++) {
+                    addLink(graphData.bfs_path[i].id, graphData.bfs_path[i + 1].id, 'bfs_path');
+                }
+            }
+            
+            // Render the graph
+            renderD3Graph(nodes, links);
+            
+            // Update title
+            document.getElementById('visualizationTitle').textContent = 'Graph Visualization: Final Paths';
+        }
+        
+        // Render graph using D3.js
+        function renderD3Graph(nodes, links) {
+            const container = document.getElementById('graphVisualization');
+            container.innerHTML = '';
+            
+            // Set up SVG
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            const svg = d3.select('#graphVisualization')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+                
+            // Create tooltip
+            const tooltip = d3.select('body').append('div')
+                .attr('class', 'tooltip')
+                .style('opacity', 0);
+            
+            // Define node colors
+            const nodeColors = {
+                'regular': '#808080',    // Gray
+                'source': '#00FF00',     // Green
+                'target': '#FF0000',     // Red
+                'gnn_path': '#198754',   // Green
+                'bfs_path': '#dc3545',   // Red
+                'gnn_frontier': '#1E90FF', // Blue
+                'bfs_frontier': '#FFA500'  // Orange
+            };
+            
+            // Define node sizes
+            const nodeSizes = {
+                'regular': 8,
+                'source': 15,
+                'target': 15,
+                'gnn_path': 12,
+                'bfs_path': 12,
+                'gnn_frontier': 10,
+                'bfs_frontier': 10
+            };
+            
+            // Define link colors
+            const linkColors = {
+                'regular': '#D3D3D3',   // Light gray
+                'traversed': '#1E90FF',  // Blue
+                'gnn_path': '#198754',   // Green
+                'bfs_path': '#dc3545'    // Red
+            };
+            
+            // Create links
+            const link = svg.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('class', d => `link ${d.type}-link`)
+                .attr('stroke', d => linkColors[d.type] || linkColors.regular)
+                .attr('stroke-width', d => d.type === 'regular' ? 1 : 2);
+            
+            // Create nodes
+            const node = svg.append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .enter().append('circle')
+                .attr('class', 'node')
+                .attr('r', d => nodeSizes[d.type] || nodeSizes.regular)
+                .attr('fill', d => nodeColors[d.type] || nodeColors.regular)
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1.5)
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .on('mouseover', function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style('opacity', .9);
+                    tooltip.html(d.title)
+                        .style('left', (event.pageX + 10) + 'px')
+                        .style('top', (event.pageY - 28) + 'px');
+                })
+                .on('mouseout', function() {
+                    tooltip.transition()
+                        .duration(500)
+                        .style('opacity', 0);
+                })
+                .on('click', function(event, d) {
+                    // Show node info when clicked
+                    showNodeInfo(d.id);
+                });
+            
+            // Add labels for important nodes
+            svg.append('g')
+                .selectAll('text')
+                .data(nodes.filter(d => d.type === 'source' || d.type === 'target'))
+                .enter().append('text')
+                .attr('x', d => d.x + 15)
+                .attr('y', d => d.y + 5)
+                .text(d => d.title.split(' ')[0])  // Show first word only
+                .attr('font-size', '12px')
+                .attr('font-weight', 'bold');
+            
+            // Update the position of links
+            link
+                .attr('x1', d => {
+                    const sourceNode = nodes.find(n => n.id === d.source);
+                    return sourceNode ? sourceNode.x : 0;
+                })
+                .attr('y1', d => {
+                    const sourceNode = nodes.find(n => n.id === d.source);
+                    return sourceNode ? sourceNode.y : 0;
+                })
+                .attr('x2', d => {
+                    const targetNode = nodes.find(n => n.id === d.target);
+                    return targetNode ? targetNode.x : 0;
+                })
+                .attr('y2', d => {
+                    const targetNode = nodes.find(n => n.id === d.target);
+                    return targetNode ? targetNode.y : 0;
+                });
+        }
+        
+        // Animation control functions
+        function previousStep() {
+            if (currentStepIndex > 0) {
+                renderVisualizationStep(currentStepIndex - 1);
+            }
+        }
+        
+        function nextStep() {
+            if (currentStepIndex < animationData.length - 1) {
+                renderVisualizationStep(currentStepIndex + 1);
+            }
+        }
+        
+        function toggleAnimation() {
+            if (isAnimationPlaying) {
+                // Stop animation
+                if (animationTimer) {
+                    clearInterval(animationTimer);
+                    animationTimer = null;
+                }
+                
+                isAnimationPlaying = false;
+                animationPlayBtn.innerHTML = '<i class="bi bi-play-fill"></i> Play';
+            } else {
+                // Start animation
+                isAnimationPlaying = true;
+                animationPlayBtn.innerHTML = '<i class="bi bi-pause-fill"></i> Pause';
+                
+                if (currentStepIndex >= animationData.length - 1) {
+                    // If at the end, start from beginning
+                    currentStepIndex = 0;
+                }
+                
+                // Play animation
+                animationTimer = setInterval(() => {
+                    if (currentStepIndex < animationData.length - 1) {
+                        renderVisualizationStep(currentStepIndex + 1);
+                    } else {
+                        // Stop at the end
+                        clearInterval(animationTimer);
+                        animationTimer = null;
+                        isAnimationPlaying = false;
+                        animationPlayBtn.innerHTML = '<i class="bi bi-play-fill"></i> Play';
+                    }
+                }, 1000);
+            }
+        }
+        
+        // Reset animation state
+        function resetAnimation() {
+            // Stop any running animation
+            if (animationTimer) {
+                clearInterval(animationTimer);
+                animationTimer = null;
+            }
+            
+            isAnimationPlaying = false;
+            currentStepIndex = 0;
+            animationData = [];
+            
+            // Reset play button
+            animationPlayBtn.innerHTML = '<i class="bi bi-play-fill"></i> Play';
+            
+            // Reset progress bar
+            const progressBar = animationProgress.querySelector('.progress-bar');
+            progressBar.style.width = '0%';
+            progressBar.setAttribute('aria-valuenow', 0);
+            progressBar.textContent = '0%';
+            
+            // Reset step counter
+            currentStep.textContent = 'Step 0';
+            totalSteps.textContent = '0';
+            
+            // Hide animation controls
+            animationProgress.style.display = 'none';
+            animationControls.style.display = 'none';
+        }
+        
+        // Show error modal
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            
+            const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+            errorModal.show();
+        }
+        
+        // Show message as alert
+        function showMessage(message) {
+            // Create alert
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-info alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            // Insert at top of page
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                const bsAlert = new bootstrap.Alert(alertDiv);
+                bsAlert.close();
+            }, 5000);
+        }
+        
+        // Update visibility of animation controls on page load
+        updateAnimationControlsVisibility();
+    });
+</script>
+{% endblock %}{% extends "base.html" %}
+
+{% block title %}Enhanced Wikipedia Graph Traversal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h3>Control Panel</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group mb-3">
+                    <label for="sourceNode">Source Node:</label>
+                    <div class="input-group">
+                        <select class="form-select" id="sourceNode">
+                            <option value="">Select a source node</option>
+                            {% for node in nodes %}
+                            <option value="{{ node.id }}">{{ node.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="targetNode">Target Node:</label>
+                    <div class="input-group">
+                        <select class="form-select" id="targetNode">
+                            <option value="">Select a target node</option>
+                            {% for node in nodes %}
+                            <option value="{{ node.id }}">{{ node.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <button class="btn btn-outline-secondary w-100 mb-3" type="button" id="randomPairBtn">Get Random Pair</button>
+                
+                <hr>
+                
+                <div class="form-group mb-3">
+                    <label for="traversalMethod">Traversal Method:{% extends "base.html" %}
+
+{% block title %}Enhanced Wikipedia Graph Traversal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2>Wiki Graph Traversal Interface</h2>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="sourceNode">Source Node:</label>
+                            <div class="input-group">
+                                <select class="form-select" id="sourceNode">
+                                    <option value="">Select a source node</option>
+                                    {% for node in nodes %}
+                                    <option value="{{ node.id }}">{{ node.title }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn btn-outline-secondary" type="button" id="randomPairBtn">Random Pair</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="targetNode">Target Node:</label>
+                            <select class="form-select" id="targetNode">
+                                <option value="">Select a target node</option>
+                                {% for node in nodes %}
+                                <option value="{{ node.id }}">{{ node.title }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="traversalMethod">Traversal Method:</label>
+                            <select class="form-select" id="traversalMethod">
+                                <option value="auto">Auto (Best Method)</option>
+                                <option value="beam">Beam Search</option>
+                                <option value="bidirectional">Bidirectional Search</option>
+                                <option value="hybrid">Hybrid Search</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="maxSteps">Max Steps:</label>
+                            <input type="number" class="form-control" id="maxSteps" value="{{ config.max_steps }}">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button class="btn btn-primary form-control" id="traverseBtn">Find Path</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4" id="resultsCard" style="display: none;">
+            <div class="card-header">
+                <h3>Traversal Results</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <h4>Path Comparison</h4>
+                        <div id="pathResults" class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Algorithm</th>
+                                        <th>Path Length</th>
+                                        <th>Nodes Explored</th>
+                                        <th>Success</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr id="gnnRow">
+                                        <td>GNN Traversal</td>
+                                        <td id="gnnPathLength">-</td>
+                                        <td id="gnnNodesExplored">-</td>
+                                        <td id="gnnSuccess">-</td>
+                                    </tr>
+                                    <tr id="bfsRow">
+                                        <td>BFS Baseline</td>
+                                        <td id="bfsPathLength">-</td>
+                                        <td id="bfsNodesExplored">-</td>
+                                        <td id="bfsSuccess">-</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12">
+                        <h4>Efficiency</h4>
+                        <div class="alert alert-info" id="efficiencyInfo">
+                            Efficiency Ratio: <span id="efficiencyRatio">-</span>x
+                            <span class="d-block mt-2" id="efficiencyText"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4>GNN Path</h4>
+                        <div id="gnnPathContainer" class="path-container">
+                            <div id="gnnPath" class="list-group">
+                                <!-- GNN path will be inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h4>BFS Path</h4>
+                        <div id="bfsPathContainer" class="path-container">
+                            <div id="bfsPath" class="list-group">
+                                <!-- BFS path will be inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h4>Graph Visualization</h4>
+                        <div id="graphVisualization" class="border p-3 rounded">
+                            <!-- D3.js visualization will go here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration Modal -->
+<div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configModalLabel">Configuration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/config" method="post" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="maxNodesConfig">Max Nodes:</label>
+                                <input type="number" class="form-control" id="maxNodesConfig" name="max_nodes" value="{{ config.max_nodes }}">
+                                <small class="form-text text-muted">Maximum number of nodes to load from the graph</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="beamWidthConfig">Beam Width:</label>
+                                <input type="number" class="form-control" id="beamWidthConfig" name="beam_width" value="{{ config.beam_width }}">
+                                <small class="form-text text-muted">Number of paths to explore in parallel</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="heuristicWeightConfig">Heuristic Weight:</label>
+                                <input type="number" step="0.1" class="form-control" id="heuristicWeightConfig" name="heuristic_weight" value="{{ config.heuristic_weight }}">
+                                <small class="form-text text-muted">Weight of the heuristic component in path scoring</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="maxStepsConfig">Max Steps:</label>
+                                <input type="number" class="form-control" id="maxStepsConfig" name="max_steps" value="{{ config.max_steps }}">
+                                <small class="form-text text-muted">Maximum number of steps in path finding</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="edgeFileConfig">Edge File:</label>
+                                <input type="file" class="form-control" id="edgeFileConfig" name="edge_file">
+                                <small class="form-text text-muted">Current: {{ config.edge_file }}</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="modelPathConfig">Model File:</label>
+                                <input type="file" class="form-control" id="modelPathConfig" name="model_path">
+                                <small class="form-text text-muted">Current: {{ config.model_path }}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="errorModalLabel">Error</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="errorMessage" class="alert alert-danger"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .path-container {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+    }
+    #graphVisualization {
+        height: 500px;
+        background-color: #f8f9fa;
+    }
+    .node {
+        stroke: #fff;
+        stroke-width: 1.5px;
+    }
+    .link {
+        stroke: #999;
+        stroke-opacity: 0.6;
+    }
+    .path-link {
+        stroke-width: 2px;
+    }
+    .gnn-path {
+        stroke: #198754;
+    }
+    .bfs-path {
+        stroke: #dc3545;
+    }
+    .tooltip {
+        position: absolute;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        border-radius: 5px;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // DOM elements
+        const sourceNode = document.getElementById('sourceNode');
+        const targetNode = document.getElementById('targetNode');
+        const traversalMethod = document.getElementById('traversalMethod');
+        const maxSteps = document.getElementById('maxSteps');
+        const traverseBtn = document.getElementById('traverseBtn');
+        const randomPairBtn = document.getElementById('randomPairBtn');
+        const resultsCard = document.getElementById('resultsCard');
+        
+        // Results elements
+        const gnnPathLength = document.getElementById('gnnPathLength');
+        const gnnNodesExplored = document.getElementById('gnnNodesExplored');
+        const gnnSuccess = document.getElementById('gnnSuccess');
+        const bfsPathLength = document.getElementById('bfsPathLength');
+        const bfsNodesExplored = document.getElementById('bfsNodesExplored');
+        const bfsSuccess = document.getElementById('bfsSuccess');
+        const efficiencyRatio = document.getElementById('efficiencyRatio');
+        const efficiencyText = document.getElementById('efficiencyText');
+        const gnnPath = document.getElementById('gnnPath');
+        const bfsPath = document.getElementById('bfsPath');
+        
+        // Add event listeners
+        traverseBtn.addEventListener('click', findPath);
+        randomPairBtn.addEventListener('click', getRandomPair);
+        
+        // Find path between nodes
+        function findPath() {
+            const source = sourceNode.value;
+            const target = targetNode.value;
+            const method = traversalMethod.value;
+            const steps = maxSteps.value;
+            
+            if (!source || !target) {
+                showError('Please select both source and target nodes');
+                return;
+            }
+            
+            if (source === target) {
+                showError('Source and target nodes must be different');
+                return;
+            }
+            
+            // Show loading
+            traverseBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Finding Path...';
+            traverseBtn.disabled = true;
+            
+            // Make API request
+            fetch('/traverse', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    source_id: source,
+                    target_id: target,
+                    method: method,
+                    max_steps: steps
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button
+                traverseBtn.innerHTML = 'Find Path';
+                traverseBtn.disabled = false;
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                // Show results
+                displayResults(data);
+            })
+            .catch(error => {
+                traverseBtn.innerHTML = 'Find Path';
+                traverseBtn.disabled = false;
+                showError('Error: ' + error.message);
+            });
+        }
+        
+        // Get random node pair
+        function getRandomPair() {
+            fetch('/random_nodes')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    // Set source and target nodes
+                    sourceNode.value = data.source_id;
+                    targetNode.value = data.target_id;
+                    
+                    // Show expected path length
+                    showMessage(`Found random pair with expected path length: ${data.expected_path_length}`);
+                })
+                .catch(error => {
+                    showError('Error: ' + error.message);
+                });
+        }
+        
+        // Display traversal results
+        function displayResults(data) {
+            // Show results card
+            resultsCard.style.display = 'block';
+            
+            // Update table
+            gnnPathLength.textContent = data.path_length;
+            gnnNodesExplored.textContent = data.nodes_explored;
+            gnnSuccess.innerHTML = data.success ? 
+                '<span class="badge bg-success">Success</span>' : 
+                '<span class="badge bg-danger">Failed</span>';
+                
+            bfsPathLength.textContent = data.bfs_path_length;
+            bfsNodesExplored.textContent = data.bfs_nodes_explored;
+            bfsSuccess.innerHTML = data.bfs_path_length > 0 ? 
+                '<span class="badge bg-success">Success</span>' : 
+                '<span class="badge bg-danger">Failed</span>';
+                
+            // Update efficiency info
+            efficiencyRatio.textContent = data.efficiency_ratio.toFixed(2);
+            
+            if (data.efficiency_ratio > 1) {
+                efficiencyText.textContent = `The GNN-based traversal explored ${((1 - (1/data.efficiency_ratio)) * 100).toFixed(1)}% fewer nodes than BFS.`;
+                efficiencyInfo.className = 'alert alert-success';
+            } else if (data.efficiency_ratio < 1) {
+                efficiencyText.textContent = `The GNN-based traversal explored ${((1 - data.efficiency_ratio) * 100).toFixed(1)}% more nodes than BFS.`;
+                efficiencyInfo.className = 'alert alert-warning';
+            } else {
+                efficiencyText.textContent = 'The GNN-based traversal explored the same number of nodes as BFS.';
+                efficiencyInfo.className = 'alert alert-info';
+            }
+            
+            // Display paths
+            displayPath(gnnPath, data.path);
+            displayPath(bfsPath, data.bfs_path);
+            
+            // Graph visualization
+            createGraphVisualization(data);
+            
+            // Scroll to results
+            resultsCard.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Display a path
+        function displayPath(container, path) {
+            container.innerHTML = '';
+            
+            if (!path || path.length === 0) {
+                container.innerHTML = '<div class="list-group-item list-group-item-danger">No path found</div>';
+                return;
+            }
+            
+            for (let i = 0; i < path.length; i++) {
+                const node = path[i];
+                let item = document.createElement('div');
+                item.className = 'list-group-item';
+                
+                if (i === 0) {
+                    item.className += ' list-group-item-success';
+                } else if (i === path.length - 1) {
+                    item.className += ' list-group-item-primary';
+                }
+                
+                let content = `<strong>${i+1}.</strong> ${node.title}`;
+                
+                if (node.url) {
+                    content += ` <a href="${node.url}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>`;
+                }
+                
+                item.innerHTML = content;
+                container.appendChild(item);
+            }
+        }
+        
+        // Create graph visualization using D3.js
+        function createGraphVisualization(data) {
+            const container = document.getElementById('graphVisualization');
+            container.innerHTML = '';
+            
+            if (!data.path || data.path.length === 0) {
+                container.innerHTML = '<div class="alert alert-warning">No path found to visualize</div>';
+                return;
+            }
+            
+            // Combine both paths to create the graph
+            const gnnPath = data.path;
+            const bfsPath = data.bfs_path;
+            
+            // Create a set of unique nodes
+            const nodesSet = new Set();
+            gnnPath.forEach(node => nodesSet.add(node.id));
+            bfsPath.forEach(node => nodesSet.add(node.id));
+            
+            // Create nodes array
+            const nodes = Array.from(nodesSet).map(id => {
+                const gnnNode = gnnPath.find(n => n.id === id);
+                const bfsNode = bfsPath.find(n => n.id === id);
+                const node = gnnNode || bfsNode;
+                
+                return {
+                    id: id,
+                    title: node.title,
+                    inGNN: gnnPath.some(n => n.id === id),
+                    inBFS: bfsPath.some(n => n.id === id),
+                    isStart: (gnnPath.length > 0 && gnnPath[0].id === id) || 
+                             (bfsPath.length > 0 && bfsPath[0].id === id),
+                    isEnd: (gnnPath.length > 0 && gnnPath[gnnPath.length-1].id === id) || 
+                           (bfsPath.length > 0 && bfsPath[bfsPath.length-1].id === id)
+                };
+            });
+            
+            // Create links for GNN path
+            const gnnLinks = [];
+            for (let i = 0; i < gnnPath.length - 1; i++) {
+                gnnLinks.push({
+                    source: gnnPath[i].id,
+                    target: gnnPath[i+1].id,
+                    type: 'gnn'
+                });
+            }
+            
+            // Create links for BFS path
+            const bfsLinks = [];
+            for (let i = 0; i < bfsPath.length - 1; i++) {
+                bfsLinks.push({
+                    source: bfsPath[i].id,
+                    target: bfsPath[i+1].id,
+                    type: 'bfs'
+                });
+            }
+            
+            // Combine links
+            const links = [...gnnLinks, ...bfsLinks];
+            
+            // Set up the SVG
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            const svg = d3.select('#graphVisualization')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+                
+            // Create a tooltip
+            const tooltip = d3.select('body').append('div')
+                .attr('class', 'tooltip')
+                .style('opacity', 0);
+            
+            // Create the force simulation
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2));
+            
+            // Create links
+            const link = svg.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('class', d => `link path-link ${d.type}-path`)
+                .attr('stroke', d => d.type === 'gnn' ? '#198754' : '#dc3545');
+            
+            // Create nodes
+            const node = svg.append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .enter().append('circle')
+                .attr('class', 'node')
+                .attr('r', d => {
+                    if (d.isStart || d.isEnd) return 12;
+                    if (d.inGNN && d.inBFS) return 8;
+                    return 6;
+                })
+                .attr('fill', d => {
+                    if (d.isStart) return '#28a745'; // Green for start
+                    if (d.isEnd) return '#007bff';   // Blue for end
+                    if (d.inGNN && d.inBFS) return '#6f42c1'; // Purple for both paths
+                    if (d.inGNN) return '#198754'; // Green for GNN path
+                    if (d.inBFS) return '#dc3545'; // Red for BFS path
+                    return '#6c757d'; // Gray for other nodes
+                })
+                .on('mouseover', function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style('opacity', .9);
+                    tooltip.html(d.title)
+                        .style('left', (event.pageX + 10) + 'px')
+                        .style('top', (event.pageY - 28) + 'px');
+                })
+                .on('mouseout', function() {
+                    tooltip.transition()
+                        .duration(500)
+                        .style('opacity', 0);
+                })
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+            
+            // Add legend
+            const legend = svg.append('g')
+                .attr('transform', 'translate(20, 20)');
+                
+            const legendItems = [
+                { color: '#28a745', text: 'Start Node' },
+                { color: '#007bff', text: 'End Node' },
+                { color: '#198754', text: 'GNN Path' },
+                { color: '#dc3545', text: 'BFS Path' },
+                { color: '#6f42c1', text: 'Both Paths' }
+            ];
+            
+            legendItems.forEach((item, i) => {
+                const legendG = legend.append('g')
+                    .attr('transform', `translate(0, ${i * 20})`);
+                    
+                legendG.append('circle')
+                    .attr('r', 6)
+                    .attr('fill', item.color);
+                    
+                legendG.append('text')
+                    .attr('x', 15)
+                    .attr('y', 4)
+                    .text(item.text)
+                    .style('font-size', '12px');
+            });
+            
+            // Update positions on simulation tick
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node
+                    .attr('cx', d => d.x = Math.max(10, Math.min(width - 10, d.x)))
+                    .attr('cy', d => d.y = Math.max(10, Math.min(height - 10, d.y)));
+            });
+            
+            // Drag functions
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+        
+        // Show error modal
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            
+            const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+            errorModal.show();
+        }
+        
+        // Show message as alert
+        function showMessage(message) {
+            // Create alert
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-info alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            // Insert at top of page
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                const bsAlert = new bootstrap.Alert(alertDiv);
+                bsAlert.close();
+            }, 5000);
+        }
+    });
+</script>
+{% endblock %}
