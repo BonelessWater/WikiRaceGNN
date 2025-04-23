@@ -4,6 +4,13 @@ This project implements advanced graph traversal algorithms designed for navigat
 
 ![DSA_diagram](https://github.com/user-attachments/assets/b2e3a12b-184f-4efb-8ac5-6dfc122b6baa)
 
+## Disclaimer to Grader
+
+This code base has MANY moving parts. If issues do arise, feel free to contact the owner of the repository.
+For quick testing, refer to the Pipeline command which will run all necessary components in one go and set
+--max_nodes to 1000 or less. If you choose to increase this number, be sure to have stable internet connection
+and a fast computer
+
 ## Key Features
 
 -   **Efficient Traversal**: GNN-guided search typically explores 30-70% fewer nodes than BFS.
@@ -20,13 +27,6 @@ This project implements advanced graph traversal algorithms designed for navigat
 -   Python 3.11 (as specified in `pyproject.toml`)
 -   [Poetry](https://python-poetry.org/docs/#installation) for dependency management
 -   A compatible CUDA setup (defaults to CUDA 11.7 in `pyproject.toml`, adjust if needed) or CPU fallback.
-
-## Disclaimer to Grader
-
-This code base has MANY moving parts. If issues do arise, feel free to contact the owner of the repository.
-For quick testing, refer to the Pipeline command which will run all necessary components in one go and set
---max_nodes to 1000 or less. If you choose to increase this number, be sure to have stable internet connection
-and a fast computer
 
 ## Installation
 
