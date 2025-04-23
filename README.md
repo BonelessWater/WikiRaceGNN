@@ -2,6 +2,8 @@
 
 This project implements advanced graph traversal algorithms designed for navigating large, complex graphs like Wikipedia. It leverages Graph Neural Networks (GraphSAGE) alongside sophisticated search strategies (Beam Search, Bidirectional Guided Search) to significantly reduce node exploration compared to traditional methods like Breadth-First Search (BFS), while still finding optimal or near-optimal paths. The project includes data generation, model training, evaluation scripts, and an interactive web dashboard for visualization and comparison.
 
+![DSA_diagram](https://github.com/user-attachments/assets/b2e3a12b-184f-4efb-8ac5-6dfc122b6baa)
+
 ## Key Features
 
 -   **Efficient Traversal**: GNN-guided search typically explores 30-70% fewer nodes than BFS.
