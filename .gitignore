@@ -8,6 +8,7 @@ environment.yml
 
 # Cache files
 __pycache__
+.vscode
 
 # Core GNN files produced by the pipeliner
 *pt
