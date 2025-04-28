@@ -174,14 +174,13 @@ WikiRaceGNN/
 ├── static/                # Static files for the web interface
 │   ├── css/
 │   │   └── style.css      # Custom CSS for the dashboard
+│   ├──html/               # HTML templates for the web interface
+│   │   ├── base.html      # Base HTML template with Bootstrap, navbar, footer
+│   │   ├── index.html     # Main dashboard page template
+│   │   └── error.html     # Error page template
 │   └── js/
 │       └── main.js        # Core JavaScript logic for the dashboard (D3, interactions)
 |
-├── templates/             # HTML templates for the web interface
-│   ├── base.html          # Base HTML template with Bootstrap, navbar, footer
-│   ├── index.html         # Main dashboard page template
-│   └── error.html         # Error page template
-│
 ├── traversal/             # Traversal algorithm implementations
 │   ├── __init__.py
 │   ├── unified.py         # Contains GraphTraverser and strategy classes
